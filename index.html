@@ -220,7 +220,25 @@
     padding: 14px 18px;
     -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   }
-  #status { font-size: 11px; letter-spacing: .25em; text-transform: uppercase; color: var(--muted); }
+  #status { font-size: 11px; line-height: 16px; letter-spacing: .25em; text-transform: uppercase; color: var(--muted); }
+  #status .s-main { display: inline-block; }
+
+  /* connecting: three dots fill in one by one, in hard steps like an old LCD */
+  #status .s-dots { display: inline-block; letter-spacing: .1em; margin-left: .1em; }
+  #status .s-dots i { font-style: normal; opacity: .15; animation: 1.4s step-end infinite; }
+  #status .s-dots i:nth-child(1) { animation-name: dot1; }
+  #status .s-dots i:nth-child(2) { animation-name: dot2; }
+  #status .s-dots i:nth-child(3) { animation-name: dot3; }
+  @keyframes dot1 { 0% { opacity: .15 } 25%, 100% { opacity: 1 } }
+  @keyframes dot2 { 0% { opacity: .15 } 50%, 100% { opacity: 1 } }
+  @keyframes dot3 { 0% { opacity: .15 } 75%, 100% { opacity: 1 } }
+
+  /* connected: title case, primary cyan, a touch of glow */
+  #status[data-kind="live"] { text-transform: none; letter-spacing: .06em; font-size: 12px; }
+  #status[data-kind="live"] .s-main {
+    color: var(--cyan); font-weight: 600;
+    text-shadow: 0 0 10px rgba(94, 242, 255, .45);
+  }
   #name { font-size: 18px; margin: 6px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #track {
     font-size: 13px; color: var(--accent); margin-bottom: 3px;
@@ -617,10 +635,10 @@ for (const el of [corsEl, plainEl]) {
   el.addEventListener('playing', () => {
     if (activeEl !== el) return;
     live = true;
-    setStatus('On air');
+    setStatus('On Air', 'live');
     if (current && metaFor !== current) startMeta(current);
   });
-  el.addEventListener('waiting', () => { if (activeEl === el) setStatus('Buffering'); });
+  el.addEventListener('waiting', () => { if (activeEl === el) setStatus('Buffering', 'busy'); });
 }
 corsEl.addEventListener('error', () => { if (activeEl === corsEl && current) playWithoutCors(current); });
 plainEl.addEventListener('error', () => {
@@ -638,7 +656,7 @@ function tune(st) {
   stopMeta();
   setTrack(null);
   showStation(st);
-  setStatus('Tuning');
+  setStatus('Tuning', 'busy');
   globe.htmlElementsData([{ lat: st.lat, lng: st.lng, el: beacon }]);
   wakeGlobe(1300);               // let the globe place the beacon
   popBeacon();
@@ -750,8 +768,26 @@ function setTrack(text) {
 
 /* ---------- UI ---------- */
 let statusText = 'Searching the airwaves';
-function setStatus(t) { statusText = t; renderStatus(); }
-function renderStatus() { $('status').textContent = muted ? `${statusText} · Muted` : statusText; }
+let statusKind = '';             // '' | 'busy' (connecting) | 'live' (on air)
+function setStatus(t, kind = '') {
+  const becameLive = kind === 'live' && statusKind !== 'live';
+  statusText = t; statusKind = kind;
+  renderStatus();
+  if (becameLive) morph($('status').querySelector('.s-main')); // small confirm beat
+}
+function renderStatus() {
+  const el = $('status');
+  el.dataset.kind = statusKind;
+  el.textContent = '';
+  const main = document.createElement('span');
+  main.className = 's-main';
+  main.textContent = statusText;
+  el.append(main);
+  if (statusKind === 'busy') {
+    el.insertAdjacentHTML('beforeend', '<span class="s-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>');
+  }
+  if (muted) el.append(' · Muted');
+}
 
 // set only when the tuned station changes, never per frame
 function setAccent(color) { document.documentElement.style.setProperty('--accent', color); }
@@ -916,6 +952,7 @@ function drawStatic() {
 /* ---------- main loop: the crosshair is the tuning needle ---------- */
 let on = false, pending = null, pendingSince = 0;
 let lastFrame = 0, lastStatic = 0, lastLit = -1;
+let glow = 0;                    // smoothed beat level that drives the crosshair pulse
 let scanKey = '', nearest = null, nearestDist = Infinity, camV = null;
 const cross = $('cross');
 const crossHalo = cross.querySelector('.halo');
@@ -925,6 +962,7 @@ function frame(t) {
   if (!on) return;
   // 120 Hz screens don't need the tuning logic twice as often; ~60 fps is plenty
   if (t - lastFrame < 14) return;
+  const dt = Math.min(100, t - lastFrame); // ms since the last processed frame
   lastFrame = t;
 
   const pov = globe.pointOfView();
@@ -1001,12 +1039,18 @@ function frame(t) {
       else if (!silentSince) silentSince = t;
       else if (t - silentSince > 2500 && current) playWithoutCors(current);
     } else {
-      level = 0.35 + 0.35 * Math.sin(t / 1000 * Math.PI * 2 * 2.08); // ~125 bpm
+      level = 0.35 + 0.35 * Math.sin(t / 1000 * Math.PI * 2 * 0.5); // slow breath, one every 2 s
     }
   }
 
+  // Smooth the raw level so the pulse swells and settles instead of flickering
+  // with every drum hit: rises over ~0.25 s, eases back down over ~0.9 s.
+  // Frame-rate independent, so 60 Hz and 120 Hz screens feel the same.
+  const tau = level > glow ? 250 : 900;
+  glow += (level - glow) * (1 - Math.exp(-dt / tau));
+
   // glow: opacity + transform only, so it stays on the compositor
-  const g = level * mg;
+  const g = glow * mg;
   setStyle(crossHalo, 'opacity', (0.15 + g * 0.85).toFixed(2));
   setStyle(cross, 'transform', RM.matches ? '' : `scale(${(1 + g * 0.18).toFixed(3)})`);
   setStyle(beaconHalo, 'opacity', (0.45 + g * 0.55).toFixed(2));
