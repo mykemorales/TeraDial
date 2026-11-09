@@ -558,7 +558,7 @@ addEventListener('keydown', e => {
 /* ---------- now playing (via the Cloudflare Worker) ----------
    Paste your deployed Worker URL here. Left empty, the app works as before,
    just without song titles. */
-const META_URL = '';           // e.g. 'https://terra-dial-meta.<your-subdomain>.workers.dev'
+const META_URL = 'https://terra-dial-meta.mentiondesign.workers.dev';           // e.g. 'https://terra-dial-meta.<your-subdomain>.workers.dev'
 const META_EVERY = 20000;      // ms between checks while a station is on air
 let metaTimer = null, metaFor = null;
 
