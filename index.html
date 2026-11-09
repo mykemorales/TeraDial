@@ -229,7 +229,9 @@
   /* power-on overlay — seen once, so it gets a real exit */
   #intro {
     position: fixed; inset: 0; display: grid; place-items: center;
-    background: radial-gradient(circle at center, rgba(2,3,10,.55), rgba(2,3,10,.92));
+    /* darker scrim + light blur so the station dots don't fight the text */
+    background: radial-gradient(ellipse 420px 260px at center, rgba(2,3,10,.88), rgba(2,3,10,.5));
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
     z-index: 10; text-align: center;
     padding: calc(24px + env(safe-area-inset-top, 0px)) 24px calc(24px + env(safe-area-inset-bottom, 0px));
     transition: opacity 300ms var(--ease-out);
@@ -240,7 +242,8 @@
   #intro h2 { font-size: 36px; font-weight: 600; letter-spacing: -0.03em; color: var(--cyan);
     text-shadow: 0 0 16px rgba(94,242,255,.4); margin-bottom: 12px;
     -webkit-user-select: none; user-select: none; }
-  #intro p { color: var(--muted); font-size: 13px; line-height: 1.7; max-width: 420px; margin: 0 auto 22px; }
+  #intro p { color: #c6d4e1; font-size: 14px; line-height: 1.7; max-width: 340px; margin: 0 auto 24px;
+    text-shadow: 0 1px 2px rgba(0,0,0,.6); text-wrap: balance; }
   #power { font-size: 14px; padding: 12px 28px; }
   #power:disabled { opacity: .5; cursor: wait; }
 
@@ -286,7 +289,7 @@
 <div id="intro">
   <div>
     <h2>TerraDial</h2>
-    <p>Spin the Earth. Line a city up with the crosshair and the static will clear as a real live station comes through. Each dot's colour is its genre — choose a genre from the menu up top to show only those stations.</p>
+    <p>Spin the Earth. Line up a city with the crosshair and tune in to live radio.</p>
     <button id="power" disabled>Loading stations…</button>
   </div>
 </div>
