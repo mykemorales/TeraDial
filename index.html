@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<!-- dark-only app: both schemes get the same bar colour so the status bar always matches -->
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#02030a">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#02030a">
+<meta name="color-scheme" content="dark">
+<title>Terra Dial</title>
+<style>
+  :root {
+    --bg: #02030a;
+    --text: #e8f6ff;
+    --muted: #7d93a8;
+    --cyan: #5ef2ff;
+    --accent: #5ef2ff;               /* colour of the tuned station's category */
+    --panel: rgba(6, 12, 24, 0.72);
+    --line: rgba(94, 242, 255, 0.25);
+
+    /* shared easing tokens */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    -webkit-tap-highlight-color: transparent;  /* no grey flash on tap */
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior: none;                 /* no pull-to-refresh while spinning the globe */
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden;
+  }
+  body { height: 100dvh; }
+
+  /* the globe is a control surface: owns every touch axis, no selection, no long-press callout */
+  #globe {
+    position: fixed; inset: 0; touch-action: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+
+  /* analogue static + scan lines over everything */
+  #static {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; opacity: 0; mix-blend-mode: screen;
+    image-rendering: pixelated;
+  }
+  #scan {
+    position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
+  }
+
+  /* the tuning crosshair — only transform/opacity change per frame */
+  #cross {
+    position: fixed; left: 50%; top: 50%;
+    width: 64px; height: 64px; margin: -32px 0 0 -32px;
+    border: 1.5px solid var(--accent); border-radius: 50%;
+    pointer-events: none; opacity: .85;
+    transition: border-color 200ms ease;
+    will-change: transform;
+  }
+  #cross i { position: absolute; background: var(--accent); transition: background-color 200ms ease; }
+  #cross i:nth-of-type(1) { left: 50%; top: -16px; width: 1px; height: 14px; }
+  #cross i:nth-of-type(2) { left: 50%; bottom: -16px; width: 1px; height: 14px; }
+  #cross i:nth-of-type(3) { top: 50%; left: -16px; height: 1px; width: 14px; }
+  #cross i:nth-of-type(4) { top: 50%; right: -16px; height: 1px; width: 14px; }
+  #cross .halo {
+    position: absolute; inset: -2px; border-radius: 50%;
+    box-shadow:
+      0 0 40px 10px color-mix(in srgb, var(--accent) 65%, transparent),
+      inset 0 0 18px color-mix(in srgb, var(--accent) 50%, transparent);
+    opacity: .15; will-change: opacity;
+  }
+
+  /* station beacon (positioned by the globe; children animate) */
+  .beacon { position: relative; width: 14px; height: 14px; pointer-events: none; }
+  .beacon .b-inner, .beacon .b-dot, .beacon .b-halo { position: absolute; inset: 0; border-radius: 50%; }
+  .beacon .b-dot { background: var(--accent); }
+  .beacon .b-halo {
+    box-shadow: 0 0 40px 14px color-mix(in srgb, var(--accent) 80%, transparent);
+    opacity: .45; will-change: opacity;
+  }
+
+  /* top bar */
+  #top {
+    position: fixed;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    display: flex; flex-direction: column; gap: 10px;
+    pointer-events: none;
+  }
+  .row { display: flex; gap: 8px; align-items: center; }
+  #top h1 {
+    font-size: 14px; letter-spacing: .3em; text-transform: uppercase;
+    color: var(--cyan); margin-right: auto; text-shadow: 0 0 12px rgba(94,242,255,.6);
+    -webkit-user-select: none; user-select: none;
+  }
+
+  /* genre chips: one horizontally scrolling row (native scroll + snap) */
+  #chips {
+    display: flex; gap: 6px; overflow-x: auto; pointer-events: auto;
+    scrollbar-width: none; overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity; padding: 2px 0;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+            mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  #chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; scroll-snap-align: start; display: inline-flex; align-items: center; gap: 7px; }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+  .chip small, #moreBtn small { font-size: 10px; color: var(--muted); }
+  #chips.collapsed .chip.extra:not(.active) { display: none; }  /* a selected genre stays visible */
+  #moreBtn { flex: none; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+  #moreBtn[aria-expanded="true"] { color: var(--text); }
+
+  /* buttons */
+  button {
+    --c: var(--cyan);
+    pointer-events: auto; cursor: pointer;
+    font: inherit; font-size: 12px; letter-spacing: .08em;
+    color: var(--text); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 14px;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    touch-action: manipulation;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    transition:
+      transform 160ms var(--ease-out),
+      background-color 150ms ease,
+      border-color 150ms ease;
+  }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  button.active {
+    background: color-mix(in srgb, var(--c) 20%, rgba(6, 12, 24, 0.72));
+    border-color: var(--c);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    button:not(:disabled):hover { border-color: var(--c); }
+  }
+
+  #mute { display: inline-flex; align-items: center; gap: 6px; }
+  #mute svg { width: 14px; height: 14px; display: block; }
+  #mute .off, #mute.active .on { display: none; }
+  #mute.active .off { display: block; }
+  #mute.active { --c: #ff5e6c; }
+
+  /* station readout */
+  #panel {
+    position: fixed; left: 0; right: 0; margin-inline: auto;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    width: min(520px, calc(100% - 32px));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 18px;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  #status { font-size: 11px; letter-spacing: .25em; text-transform: uppercase; color: var(--muted); }
+  #name { font-size: 18px; margin: 6px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #track {
+    font-size: 13px; color: var(--accent); margin-bottom: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: color 200ms ease;
+  }
+  #track[hidden] { display: none; }
+  #place { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #meter { display: flex; gap: 4px; margin-top: 10px; height: 6px; }
+  #meter span { position: relative; flex: 1; background: rgba(255,255,255,.08); border-radius: 2px; }
+  #meter span::after {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+    opacity: 0; transition: opacity 150ms ease;
+  }
+  #meter span.on::after { opacity: 1; }
+
+  /* power-on overlay — seen once, so it gets a real exit */
+  #intro {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: radial-gradient(circle at center, rgba(2,3,10,.55), rgba(2,3,10,.92));
+    z-index: 10; text-align: center;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 24px calc(24px + env(safe-area-inset-bottom, 0px));
+    transition: opacity 300ms var(--ease-out);
+  }
+  #intro > div { transition: transform 300ms var(--ease-out); }
+  #intro.leaving { opacity: 0; pointer-events: none; }
+  #intro.leaving > div { transform: scale(0.97); }
+  #intro h2 { font-size: 28px; letter-spacing: .35em; text-transform: uppercase; color: var(--cyan);
+    text-shadow: 0 0 18px rgba(94,242,255,.7); margin-bottom: 12px;
+    -webkit-user-select: none; user-select: none; }
+  #intro p { color: var(--muted); font-size: 13px; line-height: 1.7; max-width: 420px; margin: 0 auto 22px; }
+  #power { font-size: 14px; padding: 12px 28px; }
+  #power:disabled { opacity: .5; cursor: wait; }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* keep fades, drop movement */
+    #intro > div, #intro.leaving > div { transition: none; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div id="globe"></div>
+<canvas id="static"></canvas>
+<div id="scan"></div>
+<div id="cross"><b class="halo"></b><i></i><i></i><i></i><i></i></div>
+
+<div id="top">
+  <div class="row">
+    <h1>Terra Dial</h1>
+    <button id="mute" aria-pressed="false" title="Mute (M)">
+      <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+      <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
+      <span class="label">Mute</span>
+    </button>
+    <button id="random">Random</button>
+  </div>
+  <div id="chips" role="group" aria-label="Station category"></div>
+</div>
+
+<div id="panel">
+  <div id="status">Searching the airwaves</div>
+  <div id="name">—</div>
+  <div id="track" hidden></div>
+  <div id="place">Drag the globe to tune</div>
+  <div id="meter"><span></span><span></span><span></span><span></span><span></span></div>
+</div>
+
+<div id="intro">
+  <div>
+    <h2>Terra Dial</h2>
+    <p>Spin the Earth. Line a city up with the crosshair and the static will clear as a real live station comes through. Each dot's colour is its genre — pick one up top to show only those stations.</p>
+    <button id="power" disabled>Loading stations…</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/globe.gl@2"></script>
+<script>
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+const flag = cc => cc && cc.length === 2
+  ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 127397 + c.charCodeAt(0))) : '';
+
+function angDist(lat1, lng1, lat2, lng2) {
+  const r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLng = (lng2 - lng1) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * Math.asin(Math.min(1, Math.sqrt(h))) / r;
+}
+
+/* ---------- categories ----------
+   A station gets the category of its first tag that matches (tags are roughly
+   ordered by relevance), checked against this list in order. */
+const CATS = [
+  { id: 'electronic', label: 'Electronic', color: '#ff5edb', tags: ['electronic', 'techno', 'house'],
+    re: /techno|electro|house|trance|ambient|minimal|drum ?(and|&|n) ?bass|dnb|edm|dance|club|breakbeat|dubstep|idm|synth|chill ?out|lounge|downtempo/i },
+  { id: 'rock', label: 'Rock', color: '#ff8a3d', tags: ['rock', 'metal', 'indie'],
+    re: /rock|metal|punk|grunge|indie|alternative|hardcore/i },
+  { id: 'jazz', label: 'Jazz & Soul', color: '#ffd166', tags: ['jazz', 'blues', 'soul'],
+    re: /jazz|blues|swing|soul|funk|motown|gospel/i },
+  { id: 'classical', label: 'Classical', color: '#b69cff', tags: ['classical', 'opera'],
+    re: /classical|klassik|opera|baroque|symphon|orchestr|chamber|piano/i },
+  { id: 'hiphop', label: 'Hip-Hop & R&B', color: '#ff5e6c', tags: ['hiphop', 'rnb'],
+    re: /hip ?-?hop|\brap\b|r ?& ?b|\brnb\b|urban|\btrap\b|grime/i },
+  { id: 'world', label: 'World & Folk', color: '#3dffb0', tags: ['latin', 'folk', 'reggae', 'country'],
+    re: /latin|reggae|world|folk|country|traditional|celtic|salsa|cumbia|bossa|samba|afro|bollywood|k-?pop|j-?pop|arab|turk|balkan|flamenco|tango|regional/i },
+  { id: 'pop', label: 'Pop & Hits', color: '#b8ff5e', tags: ['pop', 'hits'],
+    re: /pop|hits|top ?40|charts?|adult contemporary|\b(60|70|80|90)s\b|oldies|decades/i },
+  { id: 'news', label: 'News & Talk', color: '#f4efe0', tags: ['news', 'talk'],
+    re: /news|talk|sport|information|politic|public radio|spoken|comedy|educat/i },
+];
+const OTHER = { id: 'other', label: 'Other', color: '#5ef2ff', tags: [], re: null };
+function classify(tags) {
+  for (const t of tags) for (const c of CATS) if (c.re.test(t)) return c;
+  return OTHER;
+}
+
+/* ---------- station data (Radio Browser API) ---------- */
+const SERVERS = ['de1', 'de2', 'fi1', 'nl1', 'at1'];
+async function api(query) {
+  for (const s of SERVERS) {
+    try {
+      const r = await fetch(`https://${s}.api.radio-browser.info/json/stations/search?${query}`);
+      if (r.ok) return await r.json();
+    } catch (e) { /* try next server */ }
+  }
+  return [];
+}
+
+// Only keep stations whose audio format this browser can actually play
+// (e.g. Safari can't play some Ogg/Opus streams that Chrome can).
+const probe = document.createElement('audio');
+const can = type => probe.canPlayType(type) !== '';
+const CAN = {
+  mp3: can('audio/mpeg'),
+  aac: can('audio/aac') || can('audio/mp4; codecs="mp4a.40.2"'),
+  opus: can('audio/ogg; codecs="opus"'),
+  ogg: can('audio/ogg; codecs="vorbis"'),
+  flac: can('audio/flac')
+};
+function playable(codec) {
+  const c = (codec || '').toUpperCase();
+  if (c.includes('MP3')) return CAN.mp3;
+  if (c.includes('AAC')) return CAN.aac;
+  if (c.includes('OPUS')) return CAN.opus;
+  if (c.includes('OGG') || c.includes('VORBIS')) return CAN.ogg;
+  if (c.includes('FLAC')) return CAN.flac;
+  return true; // unknown codec: let it try
+}
+
+async function loadStations() {
+  const base = 'has_geo_info=true&hidebroken=true&order=clickcount&reverse=true';
+  const genreTags = CATS.flatMap(c => c.tags);
+  const lists = await Promise.all([
+    api(base + '&limit=3000'),
+    ...genreTags.map(t => api(`${base}&tag=${encodeURIComponent(t)}&limit=400`))
+  ]);
+
+  const seen = new Map();
+  for (const s of lists.flat()) {
+    if (seen.has(s.stationuuid)) continue;
+    const url = s.url_resolved || s.url || '';
+    const lat = parseFloat(s.geo_lat), lng = parseFloat(s.geo_long);
+    if (!url.startsWith('https://') || s.hls === 1 || /\.m3u8?(\?|$)|\.pls(\?|$)/i.test(url)) continue;
+    if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) continue;
+    if (!playable(s.codec)) continue;
+    const name = (s.name || '').trim();
+    if (!name) continue;
+    const tags = (s.tags || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    seen.set(s.stationuuid, {
+      name, url, lat, lng,
+      country: s.country || '', state: s.state || '', cc: s.countrycode || '',
+      tags, cat: classify(tags)
+    });
+  }
+
+  // Many stations share a city's exact coordinates; fan them out in a small spiral
+  // so each one can be tuned in separately.
+  const stacks = new Map();
+  const out = [...seen.values()];
+  for (const st of out) {
+    const key = st.lat.toFixed(2) + ',' + st.lng.toFixed(2);
+    const n = stacks.get(key) || 0;
+    stacks.set(key, n + 1);
+    if (n > 0) {
+      const a = n * 2.39996, rad = 0.3 * Math.sqrt(n);
+      st.lat += rad * Math.sin(a);
+      st.lng += rad * Math.cos(a) / Math.max(0.2, Math.cos(st.lat * Math.PI / 180));
+    }
+  }
+  return out;
+}
+
+/* ---------- globe ---------- */
+const globe = Globe()($('globe'))
+  .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg')
+  .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+  .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
+  .atmosphereColor('#3a9bff')
+  .atmosphereAltitude(0.18)
+  .pointLat('lat').pointLng('lng')
+  .pointColor(d => d.cat.color)
+  .pointAltitude(0.006)
+  .pointRadius(0.16)
+  .pointsMerge(true)
+  .htmlLat('lat').htmlLng('lng').htmlAltitude(0.01)
+  .htmlElement(d => d.el);
+
+globe.pointOfView({ lat: 35, lng: 5, altitude: 2.2 });
+const controls = globe.controls();
+controls.minDistance = 120;
+controls.maxDistance = 500;
+controls.rotateSpeed = 0.6;
+addEventListener('resize', () => globe.width(innerWidth).height(innerHeight));
+
+const beacon = document.createElement('div');
+beacon.className = 'beacon';
+beacon.innerHTML = '<div class="b-inner"><span class="b-halo"></span><span class="b-dot"></span></div>';
+const beaconInner = beacon.querySelector('.b-inner');
+const beaconHalo = beacon.querySelector('.b-halo');
+
+/* ---------- audio ----------
+   Safari (and iOS) only let audio start from a tap or click. So instead of
+   creating a new player per station, we keep two players and "unlock" both
+   during the Switch-on click, then just swap their stream URL.
+     corsEl  → routed through Web Audio, so the glow follows the music
+     plainEl → for stations without CORS headers; plays directly, fake pulse */
+const corsEl = new Audio();
+corsEl.crossOrigin = 'anonymous';
+const plainEl = new Audio();
+for (const el of [corsEl, plainEl]) {
+  el.preload = 'none';
+  el.setAttribute('playsinline', '');
+}
+
+// a tenth of a second of silence, used to unlock the players
+function silentWavUrl() {
+  const n = 800, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
+  v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  let bin = '';
+  new Uint8Array(buf).forEach(b => bin += String.fromCharCode(b));
+  return 'data:audio/wav;base64,' + btoa(bin);
+}
+
+let ctx, master, noiseGain, musicGain, analyser, freq, wave;
+let muted = false;
+
+function initAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC();
+
+  // everything Web Audio plays goes through one master gain, so mute is one switch
+  master = ctx.createGain();
+  master.gain.value = muted ? 0 : 1;
+  master.connect(ctx.destination);
+
+  // looping white noise, band-passed to sound like AM/shortwave hiss
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+  const noise = ctx.createBufferSource();
+  noise.buffer = buf; noise.loop = true;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 2200; bp.Q.value = 0.4;
+  noiseGain = ctx.createGain(); noiseGain.gain.value = 0;
+  noise.connect(bp);
+  bp.connect(noiseGain);
+  noiseGain.connect(master);
+  noise.start(0);
+
+  // music: player → gain → master, and player → analyser (pre-gain, for the glow)
+  musicGain = ctx.createGain(); musicGain.gain.value = 0;
+  analyser = ctx.createAnalyser(); analyser.fftSize = 256;
+  freq = new Uint8Array(analyser.frequencyBinCount);
+  wave = new Uint8Array(analyser.fftSize);
+  const src = ctx.createMediaElementSource(corsEl);
+  src.connect(musicGain);
+  src.connect(analyser);
+  musicGain.connect(master);
+
+  // unlock both players while we're still inside the click
+  const blip = silentWavUrl();
+  for (const el of [corsEl, plainEl]) { el.src = blip; el.play().catch(() => {}); }
+  ctx.resume();
+}
+
+let activeEl = null, current = null, live = false, fake = false, silentSince = 0;
+
+function clearEl(el) { el.pause(); el.removeAttribute('src'); el.load(); }
+function stopAudio() { activeEl = null; live = false; clearEl(corsEl); clearEl(plainEl); }
+
+// iOS ignores .volume on media elements, but does respect .muted
+function setElVol(el, v) {
+  el.muted = v < 0.03;
+  try { el.volume = Math.min(1, Math.max(0, v)); } catch (e) {}
+}
+
+function start(el, url) {
+  activeEl = el; live = false; silentSince = 0;
+  el.src = url;
+  el.play().catch(err => {
+    if (activeEl === el && err && err.name === 'NotAllowedError') setStatus('Tap anywhere to play');
+  });
+}
+
+for (const el of [corsEl, plainEl]) {
+  el.addEventListener('playing', () => {
+    if (activeEl !== el) return;
+    live = true;
+    setStatus('On air');
+    if (current && metaFor !== current) startMeta(current);
+  });
+  el.addEventListener('waiting', () => { if (activeEl === el) setStatus('Buffering'); });
+}
+corsEl.addEventListener('error', () => { if (activeEl === corsEl && current) playWithoutCors(current); });
+plainEl.addEventListener('error', () => {
+  if (activeEl !== plainEl || !current) return;
+  current.dead = true;
+  stopAudio();
+  setStatus('No signal');
+});
+
+function tune(st) {
+  stopAudio();
+  current = st; fake = false;
+  setAccent(st.cat.color);
+  stopMeta();
+  setTrack(null);
+  showStation(st);
+  setStatus('Tuning');
+  globe.htmlElementsData([{ lat: st.lat, lng: st.lng, el: beacon }]);
+  popBeacon();
+  setElVol(plainEl, 0);
+  corsEl.muted = false;
+  start(corsEl, st.url); // try with CORS first so the glow can follow the music
+}
+
+// Stations without CORS headers (or where Safari's Web Audio hears silence)
+// still play directly, just with a fake pulse for the glow.
+function playWithoutCors(st) {
+  activeEl = null;
+  clearEl(corsEl);
+  fake = true;
+  setElVol(plainEl, 0);
+  start(plainEl, st.url);
+}
+
+// Safari suspends audio when a tab is hidden or a call comes in; wake it back up.
+function wake() {
+  if (!ctx) return;
+  if (ctx.state !== 'running') ctx.resume();
+  if (activeEl && activeEl.paused && current) activeEl.play().catch(() => {});
+}
+document.addEventListener('pointerdown', wake);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  wake();
+  if (metaFor) pollMeta(metaFor); // catch up on the song after coming back to the tab
+});
+
+function dropStation() {
+  stopAudio();
+  current = null;
+  globe.htmlElementsData([]);
+  stopMeta();
+  setTrack(null);
+  setAccent(OTHER.color);
+  setStatus('Searching the airwaves');
+  $('name').textContent = '—';
+  $('place').textContent = 'Drag the globe to tune';
+}
+
+/* ---------- mute ---------- */
+function setMuted(v) {
+  muted = v;
+  const b = $('mute');
+  b.classList.toggle('active', v);
+  b.setAttribute('aria-pressed', String(v));
+  b.querySelector('.label').textContent = v ? 'Unmute' : 'Mute';
+  if (master) master.gain.setTargetAtTime(v ? 0 : 1, ctx.currentTime, 0.015);
+  if (fake && v) setElVol(plainEl, 0); // direct-play stations bypass Web Audio
+  renderStatus();
+}
+$('mute').onclick = () => setMuted(!muted);
+addEventListener('keydown', e => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'm' || e.key === 'M') setMuted(!muted);
+});
+
+/* ---------- now playing (via the Cloudflare Worker) ----------
+   Paste your deployed Worker URL here. Left empty, the app works as before,
+   just without song titles. */
+const META_URL = '';           // e.g. 'https://terra-dial-meta.<your-subdomain>.workers.dev'
+const META_EVERY = 20000;      // ms between checks while a station is on air
+let metaTimer = null, metaFor = null;
+
+function startMeta(st) {
+  stopMeta();
+  if (!META_URL) return;
+  metaFor = st;
+  pollMeta(st);
+  metaTimer = setInterval(() => pollMeta(st), META_EVERY);
+}
+function stopMeta() { clearInterval(metaTimer); metaTimer = null; metaFor = null; }
+
+async function pollMeta(st) {
+  if (document.hidden) return;   // no lookups for a background tab
+  try {
+    const r = await fetch(`${META_URL}?url=${encodeURIComponent(st.url)}`);
+    if (!r.ok) return;
+    const j = await r.json();
+    if (current !== st) return;  // tuned away while we waited
+    setTrack(cleanTrack(j, st));
+  } catch (e) { /* keep whatever we showed last */ }
+}
+
+// Many stations send their own name, a URL or placeholder text instead of a song.
+function cleanTrack(j, st) {
+  const t = (j && j.title || '').trim();
+  if (t.length < 3) return null;
+  const low = t.toLowerCase();
+  if (low === st.name.toLowerCase() || st.name.toLowerCase().includes(low)) return null;
+  if (/https?:|www\.|\.(com|net|org|fm)\b/i.test(t)) return null;
+  if (/^(unknown|n\/a|-+|untitled|advert|commercial)/i.test(t)) return null;
+  return j.artist ? `${j.song} — ${j.artist}` : t;
+}
+
+function setTrack(text) {
+  const el = $('track');
+  const next = text || '';
+  if (el.dataset.t === next) return;
+  el.dataset.t = next;
+  el.textContent = next ? `♪ ${next}` : '';
+  el.hidden = !next;
+  if (next) morph(el);
+}
+
+/* ---------- UI ---------- */
+let statusText = 'Searching the airwaves';
+function setStatus(t) { statusText = t; renderStatus(); }
+function renderStatus() { $('status').textContent = muted ? `${statusText} · Muted` : statusText; }
+
+// set only when the tuned station changes, never per frame
+function setAccent(color) { document.documentElement.style.setProperty('--accent', color); }
+
+// tiny blur crossfade so the station name doesn't hard-swap
+function morph(el) {
+  if (!el.animate) return;
+  el.animate(
+    RM.matches
+      ? [{ opacity: 0.4 }, { opacity: 1 }]
+      : [{ opacity: 0.4, filter: 'blur(2px)' }, { opacity: 1, filter: 'blur(0px)' }],
+    { duration: 180, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' }
+  );
+}
+
+function popBeacon() {
+  if (!beaconInner.animate) return;
+  beaconInner.animate(
+    RM.matches
+      ? [{ opacity: 0 }, { opacity: 1 }]
+      : [{ opacity: 0, transform: 'scale(0.9)' }, { opacity: 1, transform: 'scale(1)' }],
+    { duration: 200, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' }
+  );
+}
+
+function showStation(st) {
+  $('name').textContent = st.name;
+  const where = [st.state, st.country].filter(Boolean).join(', ');
+  const tags = st.tags.slice(0, 3).join(' · ');
+  $('place').textContent = `${flag(st.cc)} ${where}  —  ${st.cat.label}${tags ? ' · ' + tags : ''}`;
+  morph($('name'));
+}
+const bars = [...document.querySelectorAll('#meter span')];
+
+let stations = [], active = [], mode = 'all';
+
+// genres shown by default; the rest sit behind "View more"
+const PRIMARY = ['pop', 'electronic', 'rock', 'hiphop'];
+let chipsOpen = false;
+
+function buildChips() {
+  const wrap = $('chips');
+  wrap.textContent = '';
+  const counts = new Map();
+  for (const s of stations) counts.set(s.cat.id, (counts.get(s.cat.id) || 0) + 1);
+  const ordered = [
+    ...PRIMARY.map(id => CATS.find(c => c.id === id)),
+    ...CATS.filter(c => !PRIMARY.includes(c.id)),
+    OTHER
+  ].filter(c => counts.get(c.id));
+  const items = [
+    { id: 'all', label: 'All', color: '#5ef2ff', n: stations.length },
+    ...ordered.map(c => ({ ...c, n: counts.get(c.id) }))
+  ];
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    if (it.id !== 'all' && !PRIMARY.includes(it.id)) b.classList.add('extra');
+    b.dataset.mode = it.id;
+    b.style.setProperty('--c', it.color);
+    b.setAttribute('aria-pressed', 'false');
+    const dot = document.createElement('i'); dot.className = 'dot';
+    const n = document.createElement('small'); n.textContent = it.n.toLocaleString();
+    b.append(dot, document.createTextNode(it.label), n);
+    b.onclick = () => setMode(it.id);
+    wrap.appendChild(b);
+  }
+
+  const extras = wrap.querySelectorAll('.chip.extra').length;
+  if (extras) {
+    const more = document.createElement('button');
+    more.id = 'moreBtn';
+    more.setAttribute('aria-expanded', 'false');
+    more.setAttribute('aria-controls', 'chips');
+    more.onclick = toggleChips;
+    wrap.appendChild(more);
+  }
+  renderMore();
+}
+
+function renderMore() {
+  const wrap = $('chips'), more = $('moreBtn');
+  wrap.classList.toggle('collapsed', !chipsOpen);
+  if (!more) return;
+  more.setAttribute('aria-expanded', String(chipsOpen));
+  more.textContent = chipsOpen ? 'View less' : 'View more';
+  if (!chipsOpen) {
+    const hidden = wrap.querySelectorAll('.chip.extra:not(.active)').length;
+    if (hidden) {
+      const n = document.createElement('small');
+      n.textContent = `+${hidden}`;
+      more.appendChild(n);
+    }
+  }
+}
+
+function toggleChips() {
+  chipsOpen = !chipsOpen;
+  renderMore();
+  if (!chipsOpen || !document.body.animate) return;
+  // occasional reveal: short fade with a light stagger, never blocks clicks
+  const shown = [...$('chips').querySelectorAll('.chip.extra:not(.active)')];
+  shown.forEach((el, i) => el.animate(
+    RM.matches
+      ? [{ opacity: 0 }, { opacity: 1 }]
+      : [{ opacity: 0, transform: 'translateX(-4px)' }, { opacity: 1, transform: 'none' }],
+    { duration: 200, delay: i * 30, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'backwards' }
+  ));
+}
+
+function setMode(m) {
+  mode = m;
+  active = m === 'all' ? stations : stations.filter(s => s.cat.id === m);
+  globe.pointsData(active);
+  for (const b of document.querySelectorAll('.chip')) {
+    const on = b.dataset.mode === m;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+  renderMore(); // the "+N" count changes when a hidden genre is selected
+  if (current && !active.includes(current)) dropStation();
+}
+
+$('random').onclick = () => {
+  const pool = active.filter(s => !s.dead);
+  if (!pool.length) return;
+  const s = pool[Math.floor(Math.random() * pool.length)];
+  globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 1.0 }, RM.matches ? 0 : 1600);
+};
+
+/* ---------- static canvas ---------- */
+const sc = $('static'), sx = sc.getContext('2d');
+sc.width = 200; sc.height = 120;
+const img = sx.createImageData(sc.width, sc.height);
+function drawStatic() {
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = Math.random() * 255 | 0;
+    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+  }
+  sx.putImageData(img, 0, 0);
+}
+
+/* ---------- main loop: the crosshair is the tuning needle ---------- */
+let on = false, pending = null, pendingSince = 0, frameNo = 0;
+const cross = $('cross');
+const crossHalo = cross.querySelector('.halo');
+
+function frame(t) {
+  requestAnimationFrame(frame);
+  if (!on) return;
+  frameNo++;
+
+  const pov = globe.pointOfView();
+  const capture = 1.2 + pov.altitude * 2.2; // degrees; wider when zoomed out
+
+  let best = null, bd = Infinity;
+  for (const s of active) {
+    if (s.dead) continue;
+    const d = angDist(pov.lat, pov.lng, s.lat, s.lng);
+    if (d < bd) { bd = d; best = s; }
+  }
+
+  // stick with the current station until you've clearly moved off it
+  let target = best && bd < capture ? best : null;
+  let dist = bd;
+  if (current && !current.dead) {
+    const cd = angDist(pov.lat, pov.lng, current.lat, current.lng);
+    if (cd < capture * 0.7) { target = current; dist = cd; }
+  }
+  let strength = target ? 1 - dist / capture : 0;
+  strength = strength * strength * (3 - 2 * strength); // smoothstep
+
+  // short debounce so fast spinning doesn't load every stream it passes
+  if (target !== current) {
+    if (target !== pending) { pending = target; pendingSince = t; }
+    else if (t - pendingSince > 350) {
+      pending = null;
+      target ? tune(target) : dropStation();
+    }
+  } else pending = null;
+
+  // mix static and music (master gain handles mute for the Web Audio path)
+  const mg = live && target === current ? Math.pow(strength, 0.8) : 0;
+  const now = ctx.currentTime;
+  if (fake) setElVol(plainEl, muted ? 0 : mg);
+  else musicGain.gain.setTargetAtTime(mg, now, 0.08);
+  noiseGain.gain.setTargetAtTime(0.015 + 0.16 * (1 - mg), now, 0.08);
+
+  // visual static (slower flicker when reduced motion is on)
+  if (frameNo % (RM.matches ? 6 : 2) === 0) drawStatic();
+  sc.style.opacity = (0.04 + 0.3 * (1 - mg)).toFixed(3);
+
+  // beat level for the glow
+  let level = 0;
+  if (live) {
+    if (!fake) {
+      analyser.getByteFrequencyData(freq);
+      let sum = 0;
+      for (let i = 1; i < 8; i++) sum += freq[i];
+      level = Math.max(0, (sum / 7 / 255 - 0.35) / 0.65);
+
+      // Safari sometimes hands Web Audio pure silence for live streams. If the
+      // player says it's playing but nothing comes through for 2.5 s, switch
+      // that station to direct playback.
+      analyser.getByteTimeDomainData(wave);
+      let quiet = true;
+      for (let i = 0; i < wave.length; i += 4) {
+        if (Math.abs(wave[i] - 128) > 1) { quiet = false; break; }
+      }
+      if (!quiet) silentSince = 0;
+      else if (!silentSince) silentSince = t;
+      else if (t - silentSince > 2500 && current) playWithoutCors(current);
+    } else {
+      level = 0.35 + 0.35 * Math.sin(t / 1000 * Math.PI * 2 * 2.08); // ~125 bpm
+    }
+  }
+
+  // glow: opacity + transform only, so it stays on the compositor
+  const g = level * mg;
+  crossHalo.style.opacity = (0.15 + g * 0.85).toFixed(3);
+  cross.style.transform = RM.matches ? '' : `scale(${(1 + g * 0.18).toFixed(3)})`;
+  beaconHalo.style.opacity = (0.45 + g * 0.55).toFixed(3);
+
+  // signal meter
+  const lit = Math.round(strength * bars.length);
+  bars.forEach((b, i) => b.classList.toggle('on', i < lit && !!target));
+}
+requestAnimationFrame(frame);
+
+/* ---------- boot ---------- */
+loadStations().then(list => {
+  stations = list;
+  buildChips();
+  setMode('all');
+  const btn = $('power');
+  if (!list.length) { btn.textContent = 'Could not reach the station list'; return; }
+  btn.textContent = `Switch on · ${list.length.toLocaleString()} stations`;
+  btn.disabled = false;
+  btn.onclick = () => {
+    initAudio();
+    on = true;
+    const intro = $('intro');
+    intro.classList.add('leaving');
+    const done = () => intro.remove();
+    intro.addEventListener('transitionend', e => { if (e.target === intro) done(); });
+    setTimeout(done, 400); // fallback if the transition is skipped
+  };
+});
+</script>
+</body>
+</html>
