@@ -8,9 +8,9 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#02030a">
 <meta name="color-scheme" content="dark">
 <title>Terra Dial</title>
-     <link rel="preconnect" href="https://fonts.googleapis.com">
-     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap">  
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap">
 <style>
   :root {
     --bg: #02030a;
@@ -95,31 +95,66 @@
     top: calc(16px + env(safe-area-inset-top, 0px));
     left: calc(16px + env(safe-area-inset-left, 0px));
     right: calc(16px + env(safe-area-inset-right, 0px));
-    display: flex; flex-direction: column; gap: 10px;
+    display: flex; gap: 8px; align-items: center;
     pointer-events: none;
   }
-  .row { display: flex; gap: 8px; align-items: center; }
   #top h1 {
-    font-size: 14px; letter-spacing: .3em; text-transform: uppercase;
+    font-size: 14px; letter-spacing: .3em; text-transform: uppercase; white-space: nowrap;
     color: var(--cyan); margin-right: auto; text-shadow: 0 0 12px rgba(94,242,255,.6);
     -webkit-user-select: none; user-select: none;
   }
 
-  /* genre chips: one horizontally scrolling row (native scroll + snap) */
-  #chips {
-    display: flex; gap: 6px; overflow-x: auto; pointer-events: auto;
-    scrollbar-width: none; overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity; padding: 2px 0;
-    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
-            mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+  .ic { flex: none; width: 14px; height: 14px; display: block; }
+
+  /* genre trigger */
+  #genreBtn { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 200px; }
+  #genreBtn .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #genreBtn .chev { width: 10px; height: 10px; transition: transform 180ms var(--ease-out); }
+  #genreBtn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+  /* genre menu — grows out of its trigger, exits faster than it enters */
+  #genreMenu {
+    position: fixed; z-index: 5; width: 232px;
+    max-height: calc(100dvh - var(--menu-top, 64px) - 16px - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto; overscroll-behavior: contain;
+    padding: 6px;
+    background: rgba(6, 12, 24, 0.9); border: 1px solid var(--line); border-radius: 14px;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
+    transform-origin: var(--origin, top left);
+    visibility: hidden; opacity: 0; transform: scale(0.95);
+    transition:
+      opacity 120ms var(--ease-out),
+      transform 120ms var(--ease-out),
+      visibility 0s linear 120ms;
   }
-  #chips::-webkit-scrollbar { display: none; }
-  .chip { flex: none; scroll-snap-align: start; display: inline-flex; align-items: center; gap: 7px; }
-  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
-  .chip small, #moreBtn small { font-size: 10px; color: var(--muted); }
-  #chips.collapsed .chip.extra:not(.active) { display: none; }  /* a selected genre stays visible */
-  #moreBtn { flex: none; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
-  #moreBtn[aria-expanded="true"] { color: var(--text); }
+  #genreMenu.open {
+    visibility: visible; opacity: 1; transform: none;
+    transition:
+      opacity 180ms var(--ease-out),
+      transform 180ms var(--ease-out),
+      visibility 0s;
+  }
+  #genreMenu.instant { transition: none; }   /* opened from the keyboard: no animation */
+  #genreMenu hr { border: 0; height: 1px; background: rgba(255,255,255,.08); margin: 4px 6px; }
+
+  #genreMenu .item {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 9px 10px; border: 0; border-radius: 8px;
+    background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none;
+    text-align: left; letter-spacing: .04em;
+    transition: background-color 120ms ease;
+  }
+  #genreMenu .item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #genreMenu .item small { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #genreMenu .item .check { width: 12px; height: 12px; color: var(--c); opacity: 0; }
+  #genreMenu .item[aria-checked="true"] .check { opacity: 1; }
+  #genreMenu .item:active:not(:disabled) { transform: none; background: rgba(255,255,255,.1); }
+  #genreMenu .item:focus-visible { outline: none; background: rgba(255,255,255,.08); }
+  @media (hover: hover) and (pointer: fine) {
+    #genreMenu .item:hover { background: rgba(255,255,255,.06); }
+  }
 
   /* buttons */
   button {
@@ -146,11 +181,22 @@
     button:not(:disabled):hover { border-color: var(--c); }
   }
 
-  #mute { display: inline-flex; align-items: center; gap: 6px; }
-  #mute svg { width: 14px; height: 14px; display: block; }
+  button:focus-visible { outline: 1.5px solid var(--c); outline-offset: 2px; }
+
+  #mute, #random { display: inline-flex; align-items: center; gap: 6px; }
   #mute .off, #mute.active .on { display: none; }
   #mute.active .off { display: block; }
   #mute.active { --c: #ff5e6c; }
+
+  /* phones: icon-only Mute/Random so title + genre + controls fit one row */
+  @media (max-width: 560px) {
+    #top h1 { font-size: 12px; letter-spacing: .22em; }
+    #mute .label, #random .label {
+      position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+    }
+    #mute, #random { padding: 8px 10px; }
+    #genreBtn { max-width: 132px; padding: 7px 12px; }
+  }
 
   /* station readout */
   #panel {
@@ -210,17 +256,23 @@
 <div id="cross"><b class="halo"></b><i></i><i></i><i></i><i></i></div>
 
 <div id="top">
-  <div class="row">
     <h1>Terra Dial</h1>
+    <button id="genreBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="genreMenu">
+      <i class="dot"></i><span class="label">All</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 3.5 3 3 3-3"/></svg>
+    </button>
     <button id="mute" aria-pressed="false" title="Mute (M)">
-      <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
-      <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
+      <svg class="ic on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+      <svg class="ic off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
       <span class="label">Mute</span>
     </button>
-    <button id="random">Random</button>
-  </div>
-  <div id="chips" role="group" aria-label="Station category"></div>
+    <button id="random" title="Fly to a random station">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="M4 4l5 5"/></svg>
+      <span class="label">Random</span>
+    </button>
 </div>
+
+<div id="genreMenu" role="menu" aria-label="Station genre"></div>
 
 <div id="panel">
   <div id="status">Searching the airwaves</div>
@@ -233,7 +285,7 @@
 <div id="intro">
   <div>
     <h2>Terra Dial</h2>
-    <p>Spin the Earth. Line a city up with the crosshair and the static will clear as a real live station comes through. Each dot's colour is its genre — pick one up top to show only those stations.</p>
+    <p>Spin the Earth. Line a city up with the crosshair and the static will clear as a real live station comes through. Each dot's colour is its genre — choose a genre from the menu up top to show only those stations.</p>
     <button id="power" disabled>Loading stations…</button>
   </div>
 </div>
@@ -371,7 +423,8 @@ const globe = Globe()($('globe'))
   .htmlLat('lat').htmlLng('lng').htmlAltitude(0.01)
   .htmlElement(d => d.el);
 
-globe.pointOfView({ lat: 35, lng: 5, altitude: 2.2 });
+// start over the Czech Republic
+globe.pointOfView({ lat: 49.8, lng: 15.5, altitude: 1.8 });
 const controls = globe.controls();
 controls.minDistance = 120;
 controls.maxDistance = 500;
@@ -561,7 +614,7 @@ addEventListener('keydown', e => {
 /* ---------- now playing (via the Cloudflare Worker) ----------
    Paste your deployed Worker URL here. Left empty, the app works as before,
    just without song titles. */
-const META_URL = 'https://terra-dial-meta.mentiondesign.workers.dev';           // e.g. 'https://terra-dial-meta.<your-subdomain>.workers.dev'
+const META_URL = 'https://terra-dial-meta.mentiondesign.workers.dev';
 const META_EVERY = 20000;      // ms between checks while a station is on air
 let metaTimer = null, metaFor = null;
 
@@ -646,90 +699,104 @@ const bars = [...document.querySelectorAll('#meter span')];
 
 let stations = [], active = [], mode = 'all';
 
-// genres shown by default; the rest sit behind "View more"
-const PRIMARY = ['pop', 'electronic', 'rock', 'hiphop'];
-let chipsOpen = false;
+// genre menu order: All, then the big four, then the rest
+const MENU_ORDER = ['pop', 'electronic', 'rock', 'hiphop', 'jazz', 'classical', 'world', 'news', 'other'];
+const ALL_ITEM = { id: 'all', label: 'All stations', color: '#5ef2ff' };
+const CHECK_SVG = '<svg class="check" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 6.3 2.3 2.2 4.7-5"/></svg>';
+const genreBtn = $('genreBtn'), genreMenu = $('genreMenu');
+let menuItems = [];
 
-function buildChips() {
-  const wrap = $('chips');
-  wrap.textContent = '';
+function buildMenu() {
   const counts = new Map();
   for (const s of stations) counts.set(s.cat.id, (counts.get(s.cat.id) || 0) + 1);
-  const ordered = [
-    ...PRIMARY.map(id => CATS.find(c => c.id === id)),
-    ...CATS.filter(c => !PRIMARY.includes(c.id)),
-    OTHER
-  ].filter(c => counts.get(c.id));
-  const items = [
-    { id: 'all', label: 'All', color: '#5ef2ff', n: stations.length },
-    ...ordered.map(c => ({ ...c, n: counts.get(c.id) }))
-  ];
-  for (const it of items) {
+  const cats = MENU_ORDER
+    .map(id => id === 'other' ? OTHER : CATS.find(c => c.id === id))
+    .filter(c => c && counts.get(c.id));
+
+  genreMenu.textContent = '';
+  const add = (it, n) => {
     const b = document.createElement('button');
-    b.className = 'chip';
-    if (it.id !== 'all' && !PRIMARY.includes(it.id)) b.classList.add('extra');
+    b.className = 'item';
+    b.setAttribute('role', 'menuitemradio');
+    b.setAttribute('aria-checked', 'false');
+    b.tabIndex = -1;
     b.dataset.mode = it.id;
     b.style.setProperty('--c', it.color);
-    b.setAttribute('aria-pressed', 'false');
     const dot = document.createElement('i'); dot.className = 'dot';
-    const n = document.createElement('small'); n.textContent = it.n.toLocaleString();
-    b.append(dot, document.createTextNode(it.label), n);
-    b.onclick = () => setMode(it.id);
-    wrap.appendChild(b);
-  }
-
-  const extras = wrap.querySelectorAll('.chip.extra').length;
-  if (extras) {
-    const more = document.createElement('button');
-    more.id = 'moreBtn';
-    more.setAttribute('aria-expanded', 'false');
-    more.setAttribute('aria-controls', 'chips');
-    more.onclick = toggleChips;
-    wrap.appendChild(more);
-  }
-  renderMore();
+    const name = document.createElement('span'); name.className = 'name'; name.textContent = it.label;
+    const count = document.createElement('small'); count.textContent = n.toLocaleString();
+    b.append(dot, name, count);
+    b.insertAdjacentHTML('beforeend', CHECK_SVG);
+    b.onclick = () => { setMode(it.id); closeMenu(true); };
+    genreMenu.appendChild(b);
+  };
+  add(ALL_ITEM, stations.length);
+  genreMenu.appendChild(document.createElement('hr'));
+  for (const c of cats) add(c, counts.get(c.id));
+  menuItems = [...genreMenu.querySelectorAll('.item')];
 }
 
-function renderMore() {
-  const wrap = $('chips'), more = $('moreBtn');
-  wrap.classList.toggle('collapsed', !chipsOpen);
-  if (!more) return;
-  more.setAttribute('aria-expanded', String(chipsOpen));
-  more.textContent = chipsOpen ? 'View less' : 'View more';
-  if (!chipsOpen) {
-    const hidden = wrap.querySelectorAll('.chip.extra:not(.active)').length;
-    if (hidden) {
-      const n = document.createElement('small');
-      n.textContent = `+${hidden}`;
-      more.appendChild(n);
-    }
-  }
+function placeMenu() {
+  const r = genreBtn.getBoundingClientRect();
+  const w = genreMenu.offsetWidth;
+  const gutter = 16;
+  const left = Math.min(Math.max(gutter, r.left), innerWidth - w - gutter);
+  const top = r.bottom + 6;
+  genreMenu.style.left = left + 'px';
+  genreMenu.style.top = top + 'px';
+  genreMenu.style.setProperty('--menu-top', top + 'px');
+  // grow out of the trigger, not out of the menu's own corner
+  genreMenu.style.setProperty('--origin', `${r.left + r.width / 2 - left}px -6px`);
 }
 
-function toggleChips() {
-  chipsOpen = !chipsOpen;
-  renderMore();
-  if (!chipsOpen || !document.body.animate) return;
-  // occasional reveal: short fade with a light stagger, never blocks clicks
-  const shown = [...$('chips').querySelectorAll('.chip.extra:not(.active)')];
-  shown.forEach((el, i) => el.animate(
-    RM.matches
-      ? [{ opacity: 0 }, { opacity: 1 }]
-      : [{ opacity: 0, transform: 'translateX(-4px)' }, { opacity: 1, transform: 'none' }],
-    { duration: 200, delay: i * 30, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'backwards' }
-  ));
+function openMenu(fromKeyboard) {
+  placeMenu();
+  genreMenu.classList.toggle('instant', !!fromKeyboard || RM.matches);
+  genreMenu.classList.add('open');
+  genreBtn.setAttribute('aria-expanded', 'true');
+  const sel = menuItems.find(b => b.dataset.mode === mode) || menuItems[0];
+  if (sel) sel.focus({ preventScroll: true });
 }
+
+function closeMenu(returnFocus) {
+  if (!genreMenu.classList.contains('open')) return;
+  genreMenu.classList.remove('open');
+  genreBtn.setAttribute('aria-expanded', 'false');
+  if (returnFocus) genreBtn.focus({ preventScroll: true });
+}
+
+// e.detail === 0 means the click came from Enter/Space, not a pointer
+genreBtn.addEventListener('click', e => {
+  genreMenu.classList.contains('open') ? closeMenu(false) : openMenu(e.detail === 0);
+});
+genreBtn.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openMenu(true); }
+});
+genreMenu.addEventListener('keydown', e => {
+  const i = menuItems.indexOf(document.activeElement);
+  const go = n => menuItems[(n + menuItems.length) % menuItems.length].focus();
+  if (e.key === 'ArrowDown') { e.preventDefault(); go(i + 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); go(i - 1); }
+  else if (e.key === 'Home') { e.preventDefault(); go(0); }
+  else if (e.key === 'End') { e.preventDefault(); go(-1); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); }
+  else if (e.key === 'Tab') closeMenu(false);
+});
+// tap or drag anywhere else (including the globe) closes it
+document.addEventListener('pointerdown', e => {
+  if (!genreMenu.contains(e.target) && !genreBtn.contains(e.target)) closeMenu(false);
+});
+addEventListener('resize', () => closeMenu(false));
 
 function setMode(m) {
   mode = m;
   active = m === 'all' ? stations : stations.filter(s => s.cat.id === m);
   globe.pointsData(active);
-  for (const b of document.querySelectorAll('.chip')) {
-    const on = b.dataset.mode === m;
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-pressed', String(on));
-  }
-  renderMore(); // the "+N" count changes when a hidden genre is selected
+  const it = m === 'all' ? ALL_ITEM : (m === 'other' ? OTHER : CATS.find(c => c.id === m));
+  genreBtn.style.setProperty('--c', it.color);
+  genreBtn.querySelector('.label').textContent = m === 'all' ? 'All' : it.label;
+  genreBtn.classList.toggle('active', m !== 'all');
+  for (const b of menuItems) b.setAttribute('aria-checked', String(b.dataset.mode === m));
   if (current && !active.includes(current)) dropStation();
 }
 
@@ -843,7 +910,7 @@ requestAnimationFrame(frame);
 /* ---------- boot ---------- */
 loadStations().then(list => {
   stations = list;
-  buildChips();
+  buildMenu();
   setMode('all');
   const btn = $('power');
   if (!list.length) { btn.textContent = 'Could not reach the station list'; return; }
