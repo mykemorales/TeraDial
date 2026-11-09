@@ -47,10 +47,12 @@
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
 
-  /* analogue static + scan lines over everything */
+  /* analogue static + scan lines over everything.
+     No mix-blend-mode: the noise is drawn as white with varying alpha, which
+     looks identical to grey noise in "screen" mode but blends far more cheaply. */
   #static {
     position: fixed; inset: 0; width: 100%; height: 100%;
-    pointer-events: none; opacity: 0; mix-blend-mode: screen;
+    pointer-events: none; opacity: 0;
     image-rendering: pixelated;
   }
   #scan {
@@ -143,7 +145,7 @@
   #genreMenu .item {
     display: flex; align-items: center; gap: 10px; width: 100%;
     padding: 9px 10px; border: 0; border-radius: 8px;
-    background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none;
+    background: transparent;
     text-align: left; letter-spacing: .04em;
     transition: background-color 120ms ease;
   }
@@ -157,15 +159,15 @@
     #genreMenu .item:hover { background: rgba(255,255,255,.06); }
   }
 
-  /* buttons */
+  /* buttons — a slightly more solid fill instead of a backdrop blur: a blur behind
+     each pill had to be recomputed every frame the globe or static moved */
   button {
     --c: var(--cyan);
     pointer-events: auto; cursor: pointer;
     font: inherit; font-size: 12px; letter-spacing: .08em;
-    color: var(--text); background: var(--panel);
+    color: var(--text); background: rgba(6, 12, 24, 0.86);
     border: 1px solid var(--line); border-radius: 999px;
     padding: 7px 14px;
-    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
     touch-action: manipulation;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
     transition:
@@ -175,7 +177,7 @@
   }
   button:active:not(:disabled) { transform: scale(0.97); }
   button.active {
-    background: color-mix(in srgb, var(--c) 20%, rgba(6, 12, 24, 0.72));
+    background: color-mix(in srgb, var(--c) 20%, rgba(6, 12, 24, 0.86));
     border-color: var(--c);
   }
   @media (hover: hover) and (pointer: fine) {
@@ -189,14 +191,20 @@
   #mute.active .off { display: block; }
   #mute.active { --c: #ff5e6c; }
 
-  /* phones: icon-only Mute/Random so title + genre + controls fit one row */
+  /* phones: icon-only Mute/Random so title + genre + controls fit one row,
+     sized up to a comfortable ~44px thumb target */
   @media (max-width: 560px) {
+    #top { gap: 6px; }
     #top h1 { font-size: 15px; }
+    #top button { min-height: 44px; font-size: 13px; }
     #mute .label, #random .label {
       position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
     }
-    #mute, #random { padding: 8px 10px; }
-    #genreBtn { max-width: 132px; padding: 7px 12px; }
+    #mute, #random { min-width: 44px; padding: 0 12px; justify-content: center; }
+    #mute .ic, #random .ic { width: 18px; height: 18px; }
+    #genreBtn { max-width: 140px; padding: 0 14px; }
+    #genreBtn .dot { width: 8px; height: 8px; }
+    #genreBtn .chev { width: 12px; height: 12px; }
   }
 
   /* station readout */
@@ -244,8 +252,23 @@
     -webkit-user-select: none; user-select: none; }
   #intro p { color: #c6d4e1; font-size: 14px; line-height: 1.7; max-width: 340px; margin: 0 auto 24px;
     text-shadow: 0 1px 2px rgba(0,0,0,.6); text-wrap: balance; }
-  #power { font-size: 14px; padding: 12px 28px; }
-  #power:disabled { opacity: .5; cursor: wait; }
+  #power {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 48px; font-size: 14px; padding: 0 28px;
+  }
+  #power:disabled { cursor: wait; color: var(--muted); }
+  /* 13×13 pixel globe drawn at 2×, kept crisp so it reads as 16-bit sprite art */
+  #power .spin { width: 26px; height: 26px; image-rendering: pixelated; image-rendering: crisp-edges; }
+  /* loaded: the one primary action on screen, so it gets the filled cyan */
+  #power.ready {
+    background: var(--cyan); color: #02030a; border-color: var(--cyan);
+    font-weight: 600; letter-spacing: .06em;
+    box-shadow: 0 0 24px rgba(94, 242, 255, .35);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    #power.ready:hover { background: #8ff6ff; border-color: #8ff6ff; }
+  }
+  #power.ready:focus-visible { outline-color: var(--cyan); outline-offset: 3px; }
 
   @media (prefers-reduced-motion: reduce) {
     /* keep fades, drop movement */
@@ -290,7 +313,7 @@
   <div>
     <h2>TerraDial</h2>
     <p>Spin the Earth. Line up a city with the crosshair and tune in to live radio.</p>
-    <button id="power" disabled>Loading stations…</button>
+    <button id="power" disabled><canvas class="spin" width="13" height="13" aria-hidden="true"></canvas><span class="label">Scanning frequencies…</span></button>
   </div>
 </div>
 
@@ -302,11 +325,22 @@ const RM = matchMedia('(prefers-reduced-motion: reduce)');
 const flag = cc => cc && cc.length === 2
   ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 127397 + c.charCodeAt(0))) : '';
 
-function angDist(lat1, lng1, lat2, lng2) {
-  const r = Math.PI / 180;
-  const dLat = (lat2 - lat1) * r, dLng = (lng2 - lng1) * r;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) ** 2;
-  return 2 * Math.asin(Math.min(1, Math.sqrt(h))) / r;
+// Stations and the camera are compared as unit vectors: one dot product per
+// station instead of a page of trig, which matters when it runs every frame.
+const RAD = Math.PI / 180, DEG = 180 / Math.PI;
+function vec(lat, lng) {
+  const c = Math.cos(lat * RAD);
+  return [c * Math.cos(lng * RAD), Math.sin(lat * RAD), c * Math.sin(lng * RAD)];
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const angleOf = d => Math.acos(Math.max(-1, Math.min(1, d))) * DEG;
+
+// write a style only when the value actually changes
+function setStyle(el, prop, v) {
+  const cache = el._styles || (el._styles = {});
+  if (cache[prop] === v) return;
+  cache[prop] = v;
+  el.style[prop] = v;
 }
 
 /* ---------- categories ----------
@@ -408,12 +442,16 @@ async function loadStations() {
       st.lat += rad * Math.sin(a);
       st.lng += rad * Math.cos(a) / Math.max(0.2, Math.cos(st.lat * Math.PI / 180));
     }
+    st.v = vec(st.lat, st.lng);
   }
   return out;
 }
 
 /* ---------- globe ---------- */
-const globe = Globe()($('globe'))
+// "low-power" asks dual-GPU laptops to stay on the integrated GPU
+const globe = Globe({
+  rendererConfig: { antialias: true, alpha: true, powerPreference: 'low-power' }
+})($('globe'))
   .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg')
   .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
   .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
@@ -425,7 +463,13 @@ const globe = Globe()($('globe'))
   .pointRadius(0.16)
   .pointsMerge(true)
   .htmlLat('lat').htmlLng('lng').htmlAltitude(0.01)
-  .htmlElement(d => d.el);
+  .htmlElement(d => d.el)
+  // nothing on the globe is hoverable or clickable, so skip the per-frame raycasting
+  .enablePointerInteraction(false);
+
+// The library renders at up to 2× device pixels; on a phone that's ~4× the pixels
+// of 1×. 1.5× is visually near-identical on a blurry night texture.
+globe.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
 // start over the Czech Republic
 globe.pointOfView({ lat: 49.8, lng: 15.5, altitude: 1.8 });
@@ -433,7 +477,41 @@ const controls = globe.controls();
 controls.minDistance = 120;
 controls.maxDistance = 500;
 controls.rotateSpeed = 0.6;
-addEventListener('resize', () => globe.width(innerWidth).height(innerHeight));
+
+/* ---------- let the globe sleep when nothing moves ----------
+   The 3D scene used to be redrawn 60–120 times a second forever, even with the
+   globe sitting still. Now it renders while you drag, while it glides to a stop,
+   while a fly-to or a fade is running, and then pauses. The last frame stays on
+   screen; any touch wakes it before the controls see the event. */
+let globeReady = false, globeAwake = true, dragging = false;
+let sleepAt = 0, sleepTimer = 0;
+
+function wakeGlobe(ms = 1200) {
+  sleepAt = Math.max(sleepAt, performance.now() + ms);
+  if (!globeAwake) { globeAwake = true; globe.resumeAnimation(); }
+  if (globeReady && !sleepTimer) sleepTimer = setTimeout(trySleep, ms);
+}
+function trySleep() {
+  sleepTimer = 0;
+  const left = sleepAt - performance.now();
+  if (left > 0) { sleepTimer = setTimeout(trySleep, left + 20); return; }
+  if (dragging) { sleepTimer = setTimeout(trySleep, 500); return; }
+  globeAwake = false;
+  globe.pauseAnimation();
+}
+
+controls.addEventListener('start', () => { dragging = true; wakeGlobe(); });
+controls.addEventListener('end', () => { dragging = false; wakeGlobe(); });
+controls.addEventListener('change', () => wakeGlobe()); // includes the damping glide
+const globeEl = $('globe');
+globeEl.addEventListener('pointerdown', () => wakeGlobe(), { capture: true });
+globeEl.addEventListener('wheel', () => wakeGlobe(), { capture: true, passive: true });
+
+// don't pause before the textures have drawn, or the globe could stay black
+globe.onGlobeReady(() => { globeReady = true; wakeGlobe(1500); });
+setTimeout(() => { if (!globeReady) { globeReady = true; wakeGlobe(); } }, 10000);
+
+addEventListener('resize', () => { globe.width(innerWidth).height(innerHeight); wakeGlobe(); });
 
 const beacon = document.createElement('div');
 beacon.className = 'beacon';
@@ -544,6 +622,7 @@ corsEl.addEventListener('error', () => { if (activeEl === corsEl && current) pla
 plainEl.addEventListener('error', () => {
   if (activeEl !== plainEl || !current) return;
   current.dead = true;
+  scanKey = '';                  // re-pick the nearest station without this one
   stopAudio();
   setStatus('No signal');
 });
@@ -557,6 +636,7 @@ function tune(st) {
   showStation(st);
   setStatus('Tuning');
   globe.htmlElementsData([{ lat: st.lat, lng: st.lng, el: beacon }]);
+  wakeGlobe(1300);               // let the globe place the beacon
   popBeacon();
   setElVol(plainEl, 0);
   corsEl.muted = false;
@@ -590,6 +670,7 @@ function dropStation() {
   stopAudio();
   current = null;
   globe.htmlElementsData([]);
+  wakeGlobe();
   stopMeta();
   setTrack(null);
   setAccent(OTHER.color);
@@ -796,6 +877,8 @@ function setMode(m) {
   mode = m;
   active = m === 'all' ? stations : stations.filter(s => s.cat.id === m);
   globe.pointsData(active);
+  wakeGlobe(1500);               // points fade between genres
+  scanKey = '';
   const it = m === 'all' ? ALL_ITEM : (m === 'other' ? OTHER : CATS.find(c => c.id === m));
   genreBtn.style.setProperty('--c', it.color);
   genreBtn.querySelector('.label').textContent = m === 'all' ? 'All' : it.label;
@@ -808,47 +891,61 @@ $('random').onclick = () => {
   const pool = active.filter(s => !s.dead);
   if (!pool.length) return;
   const s = pool[Math.floor(Math.random() * pool.length)];
-  globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 1.0 }, RM.matches ? 0 : 1600);
+  const ms = RM.matches ? 0 : 1600;
+  wakeGlobe(ms + 600);
+  globe.pointOfView({ lat: s.lat, lng: s.lng, altitude: 1.0 }, ms);
 };
 
-/* ---------- static canvas ---------- */
+/* ---------- static canvas ----------
+   White pixels with random alpha (see the #static CSS). The colour channels are
+   set once; each redraw only rewrites alpha. */
 const sc = $('static'), sx = sc.getContext('2d');
 sc.width = 200; sc.height = 120;
 const img = sx.createImageData(sc.width, sc.height);
+img.data.fill(255);
 function drawStatic() {
   const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const v = Math.random() * 255 | 0;
-    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
-  }
+  for (let i = 3; i < d.length; i += 4) d[i] = Math.random() * 255 | 0;
   sx.putImageData(img, 0, 0);
 }
 
 /* ---------- main loop: the crosshair is the tuning needle ---------- */
-let on = false, pending = null, pendingSince = 0, frameNo = 0;
+let on = false, pending = null, pendingSince = 0;
+let lastFrame = 0, lastStatic = 0, lastLit = -1;
+let scanKey = '', nearest = null, nearestDist = Infinity, camV = null;
 const cross = $('cross');
 const crossHalo = cross.querySelector('.halo');
 
 function frame(t) {
   requestAnimationFrame(frame);
   if (!on) return;
-  frameNo++;
+  // 120 Hz screens don't need the tuning logic twice as often; ~60 fps is plenty
+  if (t - lastFrame < 14) return;
+  lastFrame = t;
 
   const pov = globe.pointOfView();
   const capture = 1.2 + pov.altitude * 2.2; // degrees; wider when zoomed out
 
-  let best = null, bd = Infinity;
-  for (const s of active) {
-    if (s.dead) continue;
-    const d = angDist(pov.lat, pov.lng, s.lat, s.lng);
-    if (d < bd) { bd = d; best = s; }
+  // only search for the nearest station when the camera has actually moved
+  const key = pov.lat.toFixed(4) + ',' + pov.lng.toFixed(4) + ',' + pov.altitude.toFixed(3);
+  if (key !== scanKey) {
+    scanKey = key;
+    camV = vec(pov.lat, pov.lng);
+    let bestDot = -2;
+    nearest = null;
+    for (const s of active) {
+      if (s.dead) continue;
+      const d = dot(s.v, camV);
+      if (d > bestDot) { bestDot = d; nearest = s; }
+    }
+    nearestDist = nearest ? angleOf(bestDot) : Infinity;
   }
 
   // stick with the current station until you've clearly moved off it
-  let target = best && bd < capture ? best : null;
-  let dist = bd;
+  let target = nearest && nearestDist < capture ? nearest : null;
+  let dist = nearestDist;
   if (current && !current.dead) {
-    const cd = angDist(pov.lat, pov.lng, current.lat, current.lng);
+    const cd = angleOf(dot(current.v, camV));
     if (cd < capture * 0.7) { target = current; dist = cd; }
   }
   let strength = target ? 1 - dist / capture : 0;
@@ -870,9 +967,14 @@ function frame(t) {
   else musicGain.gain.setTargetAtTime(mg, now, 0.08);
   noiseGain.gain.setTargetAtTime(0.015 + 0.16 * (1 - mg), now, 0.08);
 
-  // visual static (slower flicker when reduced motion is on)
-  if (frameNo % (RM.matches ? 6 : 2) === 0) drawStatic();
-  sc.style.opacity = (0.04 + 0.3 * (1 - mg)).toFixed(3);
+  // visual static: ~20 redraws a second (it reads as the same flicker), slower
+  // with reduced motion, and none at all once a station is clearly tuned in
+  const staticOpacity = 0.04 + 0.3 * (1 - mg);
+  if (staticOpacity > 0.06 && t - lastStatic > (RM.matches ? 150 : 50)) {
+    lastStatic = t;
+    drawStatic();
+  }
+  setStyle(sc, 'opacity', staticOpacity.toFixed(2));
 
   // beat level for the glow
   let level = 0;
@@ -901,15 +1003,48 @@ function frame(t) {
 
   // glow: opacity + transform only, so it stays on the compositor
   const g = level * mg;
-  crossHalo.style.opacity = (0.15 + g * 0.85).toFixed(3);
-  cross.style.transform = RM.matches ? '' : `scale(${(1 + g * 0.18).toFixed(3)})`;
-  beaconHalo.style.opacity = (0.45 + g * 0.55).toFixed(3);
+  setStyle(crossHalo, 'opacity', (0.15 + g * 0.85).toFixed(2));
+  setStyle(cross, 'transform', RM.matches ? '' : `scale(${(1 + g * 0.18).toFixed(3)})`);
+  setStyle(beaconHalo, 'opacity', (0.45 + g * 0.55).toFixed(2));
 
   // signal meter
-  const lit = Math.round(strength * bars.length);
-  bars.forEach((b, i) => b.classList.toggle('on', i < lit && !!target));
+  const lit = target ? Math.round(strength * bars.length) : 0;
+  if (lit !== lastLit) {
+    lastLit = lit;
+    bars.forEach((b, i) => b.classList.toggle('on', i < lit));
+  }
 }
 requestAnimationFrame(frame);
+
+/* ---------- loading globe: a 13×13 pixel sprite ----------
+   Each frame works out, per pixel, where it sits on a sphere and lights it if
+   it lands on a meridian or parallel. It steps at 10 fps on purpose: the
+   choppy turn is what makes it read as 16-bit. */
+const spinCanvas = $('power').querySelector('.spin');
+const spinCtx = spinCanvas.getContext('2d');
+let spinPhase = 0, spinTimer = 0;
+function drawSpin() {
+  const N = 13, R = N / 2;
+  spinCtx.clearRect(0, 0, N, N);
+  for (let py = 0; py < N; py++) for (let px = 0; px < N; px++) {
+    const x = (px + 0.5 - R) / R, y = (py + 0.5 - R) / R, r2 = x * x + y * y;
+    if (r2 > 1) continue;
+    let lit = r2 > 0.8;                                   // outline
+    if (!lit) {
+      const z = Math.sqrt(1 - r2);
+      const lat = Math.asin(-y) * DEG;
+      const lon = Math.atan2(x, z) * DEG + spinPhase;
+      const m = ((lon % 60) + 60) % 60;
+      lit = Math.min(m, 60 - m) < 9                       // meridians every 60°
+        || Math.abs(lat) < 6 || Math.abs(Math.abs(lat) - 45) < 6; // equator + 45°N/S
+    }
+    spinCtx.fillStyle = lit ? '#5ef2ff' : 'rgba(94, 242, 255, 0.16)';
+    spinCtx.fillRect(px, py, 1, 1);
+  }
+}
+drawSpin();
+if (!RM.matches) spinTimer = setInterval(() => { spinPhase = (spinPhase + 10) % 360; drawSpin(); }, 100);
+function stopSpin() { clearInterval(spinTimer); spinCanvas.remove(); }
 
 /* ---------- boot ---------- */
 loadStations().then(list => {
@@ -917,8 +1052,11 @@ loadStations().then(list => {
   buildMenu();
   setMode('all');
   const btn = $('power');
-  if (!list.length) { btn.textContent = 'Could not reach the station list'; return; }
-  btn.textContent = `Switch on · ${list.length.toLocaleString()} stations`;
+  stopSpin();
+  const label = btn.querySelector('.label');
+  if (!list.length) { label.textContent = 'Could not reach the station list'; return; }
+  label.textContent = `Tune in · ${list.length.toLocaleString()} stations`;
+  btn.classList.add('ready');
   btn.disabled = false;
   btn.onclick = () => {
     initAudio();
