@@ -159,6 +159,11 @@
   #genreMenu .item[aria-checked="true"] .check { opacity: 1; }
   #genreMenu .item:active:not(:disabled) { transform: none; background: rgba(255,255,255,.1); }
   #genreMenu .item:focus-visible { outline: none; background: rgba(255,255,255,.08); }
+  #genreMenu .item:disabled { cursor: default; opacity: .6; }
+  #genreMenu .item .heart-ic { flex: none; width: 12px; height: 12px; margin: 0 -2.5px; color: var(--c); } /* takes a dot's 7px so labels line up */
+  /* saved stations, listed under Favourites: tap one to fly there */
+  #genreMenu .item.fav-station { padding: 7px 10px 7px 26px; font-size: 12px; letter-spacing: .02em; }
+  #genreMenu .item.fav-station .dot { width: 6px; height: 6px; }
   @media (hover: hover) and (pointer: fine) {
     #genreMenu .item:hover { background: rgba(255,255,255,.06); }
   }
@@ -284,7 +289,25 @@
     color: var(--cyan); font-weight: 600;
     text-shadow: 0 0 10px rgba(94, 242, 255, .45);
   }
-  #name { font-size: 18px; margin: 6px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .name-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+  #name { flex: 1; min-width: 0; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* favourite heart: a 40px tap target that doesn't grow the row */
+  #fav {
+    flex: none; display: grid; place-items: center;
+    width: 40px; height: 40px; margin: -10px -12px -10px 0; padding: 0;
+    border: 0; border-radius: 50%; background: transparent; color: var(--muted);
+    transition: color 150ms ease, transform 160ms var(--ease-out);
+  }
+  #fav[hidden] { display: none; }
+  #fav svg { width: 20px; height: 20px; transition: fill 150ms ease; }
+  #fav[aria-pressed="true"] { color: var(--accent); }
+  #fav[aria-pressed="true"] svg { fill: currentColor; }
+  #fav:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -4px; }
+  @media (hover: hover) and (pointer: fine) {
+    #fav:hover { color: var(--text); }
+    #fav[aria-pressed="true"]:hover { color: var(--accent); }
+  }
   #track {
     font-size: 13px; color: var(--accent); margin-bottom: 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -382,7 +405,12 @@
 
 <div id="panel">
   <div id="status">Searching the airwaves</div>
-  <div id="name">—</div>
+  <div class="name-row">
+    <div id="name">—</div>
+    <button id="fav" aria-pressed="false" aria-label="Save to favourites" title="Save to favourites (F)" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.3-4.5-9.3-9C1.3 8.1 3.3 4.6 6.8 4.6c2.1 0 3.6 1.2 5.2 3 1.6-1.8 3.1-3 5.2-3 3.5 0 5.5 3.5 4.1 6.9-2 4.5-9.3 9-9.3 9z"/></svg>
+    </button>
+  </div>
   <div id="track" hidden></div>
   <div id="place">Drag the globe to tune</div>
   <div id="signal">
@@ -392,12 +420,12 @@
 </div>
 
 <footer id="footer">
-  <span class="credit">Made with <svg class="heart" viewBox="0 0 24 24" fill="currentColor" aria-label="love" role="img"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.2 3 4.5 6.7 4.5c2.2 0 3.7 1.2 5.3 3.1 1.6-1.9 3.1-3.1 5.3-3.1 3.7 0 5.8 3.7 4.3 7.2C19.5 16.4 12 21 12 21z"/></svg> by <a class="author" href="https://moralesmike.com" target="_blank" rel="noopener">mikemorales</a></span>
   <!-- opens in a new tab so the station keeps playing -->
   <a href="https://buy.stripe.com/eVq00k29E8WLgbd6dx8so00" target="_blank" rel="noopener">
     <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z"/><path d="M6 2v2"/><path d="M10 2v2"/><path d="M14 2v2"/></svg>
     Buy me a coffee
   </a>
+  <span class="credit">Made with <svg class="heart" viewBox="0 0 24 24" fill="currentColor" aria-label="love" role="img"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.2 3 4.5 6.7 4.5c2.2 0 3.7 1.2 5.3 3.1 1.6-1.9 3.1-3.1 5.3-3.1 3.7 0 5.8 3.7 4.3 7.2C19.5 16.4 12 21 12 21z"/></svg> by <a class="author" href="https://moralesmike.com" target="_blank" rel="noopener">mikemorales</a></span>
 </footer>
 
 <div id="intro">
@@ -515,7 +543,7 @@ async function loadStations() {
     if (!name) continue;
     const tags = (s.tags || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
     seen.set(s.stationuuid, {
-      name, url, lat, lng,
+      id: s.stationuuid, name, url, lat, lng,
       country: s.country || '', state: s.state || '', cc: s.countrycode || '',
       tags, cat: classify(tags)
     });
@@ -535,8 +563,32 @@ async function loadStations() {
       st.lng += rad * Math.cos(a) / Math.max(0.2, Math.cos(st.lat * Math.PI / 180));
     }
     st.v = vec(st.lat, st.lng);
+    if (favs.has(st.id)) st.fav = true;
+  }
+  // favourites that fell out of today's list come back from their saved snapshot
+  for (const [id, snap] of favs) {
+    if (seen.has(id)) continue;
+    out.push({ ...snap, id, cat: classify(snap.tags || []), v: vec(snap.lat, snap.lng), fav: true });
   }
   return out;
+}
+
+/* ---------- favourites ----------
+   Saved in this browser only (no accounts). Each one keeps a snapshot of the
+   station, so it still works if it drops out of the station list later. */
+const FAV_KEY = 'terradial.favourites.v1';
+const favs = new Map();
+try {
+  for (const f of JSON.parse(localStorage.getItem(FAV_KEY) || '[]')) {
+    if (f && f.id && f.url && isFinite(f.lat) && isFinite(f.lng)) favs.set(f.id, f);
+  }
+} catch (e) { /* storage blocked or corrupt: start empty */ }
+function saveFavs() {
+  try { localStorage.setItem(FAV_KEY, JSON.stringify([...favs.values()])); } catch (e) { /* private mode */ }
+}
+function snapshot(st) {
+  const { id, name, url, lat, lng, country, state, cc, tags } = st;
+  return { id, name, url, lat, lng, country, state, cc, tags };
 }
 
 /* ---------- globe ---------- */
@@ -726,6 +778,7 @@ function tune(st) {
   stopMeta();
   setTrack(null);
   showStation(st);
+  renderFavBtn();
   setStatus('Tuning', 'busy');
   globe.htmlElementsData([{ lat: st.lat, lng: st.lng, el: beacon }]);
   wakeGlobe(1300);               // let the globe place the beacon
@@ -769,6 +822,7 @@ function dropStation() {
   setStatus('Searching the airwaves');
   $('name').textContent = '—';
   $('place').textContent = 'Drag the globe to tune';
+  renderFavBtn();
 }
 
 /* ---------- mute ---------- */
@@ -786,6 +840,7 @@ $('mute').onclick = () => setMuted(!muted);
 addEventListener('keydown', e => {
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'm' || e.key === 'M') setMuted(!muted);
+  if ((e.key === 'f' || e.key === 'F') && current && !genreMenu.contains(document.activeElement)) toggleFav(current);
 });
 
 /* ---------- now playing (via the Cloudflare Worker) ----------
@@ -898,6 +953,8 @@ let stations = [], active = [], mode = 'all';
 // genre menu order: All, then the big four, then the rest
 const MENU_ORDER = ['pop', 'electronic', 'rock', 'hiphop', 'jazz', 'classical', 'world', 'news', 'other'];
 const ALL_ITEM = { id: 'all', label: 'All stations', color: '#5ef2ff' };
+const FAV_ITEM = { id: 'fav', label: 'Favourites', color: '#ff5e6c' };
+const HEART_SVG = '<svg class="heart-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.5s-7.3-4.5-9.3-9C1.3 8.1 3.3 4.6 6.8 4.6c2.1 0 3.6 1.2 5.2 3 1.6-1.8 3.1-3 5.2-3 3.5 0 5.5 3.5 4.1 6.9-2 4.5-9.3 9-9.3 9z"/></svg>';
 const CHECK_SVG = '<svg class="check" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 6.3 2.3 2.2 4.7-5"/></svg>';
 const genreBtn = $('genreBtn'), genreMenu = $('genreMenu');
 let menuItems = [];
@@ -927,10 +984,72 @@ function buildMenu() {
     genreMenu.appendChild(b);
   };
   add(ALL_ITEM, stations.length);
+
+  // Favourites: a filter like the genres, then each saved station to fly to
+  const saved = stations.filter(s => s.fav).sort((a, b) => a.name.localeCompare(b.name));
+  add(FAV_ITEM, saved.length);
+  const favItem = genreMenu.lastElementChild;
+  favItem.querySelector('.dot').outerHTML = HEART_SVG;
+  if (!saved.length) {
+    favItem.disabled = true;
+    favItem.querySelector('small').textContent = 'tap ♥ to save';
+  }
+  for (const st of saved) {
+    const b = document.createElement('button');
+    b.className = 'item fav-station';
+    b.setAttribute('role', 'menuitem');
+    b.tabIndex = -1;
+    b.style.setProperty('--c', st.cat.color);
+    const dot = document.createElement('i'); dot.className = 'dot';
+    const name = document.createElement('span'); name.className = 'name'; name.textContent = st.name;
+    const where = document.createElement('small'); where.textContent = flag(st.cc) || st.country;
+    b.append(dot, name, where);
+    b.onclick = () => { flyTo(st); closeMenu(true); };
+    genreMenu.appendChild(b);
+  }
+
   genreMenu.appendChild(document.createElement('hr'));
   for (const c of cats) add(c, counts.get(c.id));
-  menuItems = [...genreMenu.querySelectorAll('.item')];
+  menuItems = [...genreMenu.querySelectorAll('.item:not(:disabled)')];
+  for (const b of menuItems) if (b.dataset.mode) b.setAttribute('aria-checked', String(b.dataset.mode === mode));
 }
+
+// fly the globe so the station sits under the crosshair; tuning then happens as usual
+function flyTo(st) {
+  if (!active.includes(st)) setMode(st.fav ? 'fav' : 'all');
+  const ms = RM.matches ? 0 : 1600;
+  wakeGlobe(ms + 600);
+  globe.pointOfView({ lat: st.lat, lng: st.lng, altitude: 1.0 }, ms);
+}
+
+const favBtn = $('fav');
+function renderFavBtn(pop) {
+  favBtn.hidden = !current;
+  if (!current) return;
+  const on = !!current.fav;
+  favBtn.setAttribute('aria-pressed', String(on));
+  const label = on ? 'Remove from favourites' : 'Save to favourites';
+  favBtn.setAttribute('aria-label', label);
+  favBtn.title = label + ' (F)';
+  if (pop && on && favBtn.animate) {
+    favBtn.animate(
+      RM.matches
+        ? [{ opacity: 0.4 }, { opacity: 1 }]
+        : [{ transform: 'scale(0.8)' }, { transform: 'scale(1.18)', offset: 0.45 }, { transform: 'scale(1)' }],
+      { duration: 320, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' }
+    );
+  }
+}
+
+function toggleFav(st) {
+  st.fav = !st.fav;
+  if (st.fav) favs.set(st.id, snapshot(st)); else favs.delete(st.id);
+  saveFavs();
+  renderFavBtn(true);
+  buildMenu();
+  if (mode === 'fav') setMode('fav');   // refresh the dots on the globe
+}
+favBtn.onclick = () => { if (current) toggleFav(current); };
 
 function placeMenu() {
   const r = genreBtn.getBoundingClientRect();
@@ -986,15 +1105,18 @@ addEventListener('resize', () => closeMenu(false));
 
 function setMode(m) {
   mode = m;
-  active = m === 'all' ? stations : stations.filter(s => s.cat.id === m);
+  active = m === 'all' ? stations
+    // in Favourites, the station you're on stays tunable even after un-hearting it
+    : m === 'fav' ? stations.filter(s => s.fav || s === current)
+    : stations.filter(s => s.cat.id === m);
   globe.pointsData(active);
   wakeGlobe(1500);               // points fade between genres
   scanKey = '';
-  const it = m === 'all' ? ALL_ITEM : (m === 'other' ? OTHER : CATS.find(c => c.id === m));
+  const it = m === 'all' ? ALL_ITEM : m === 'fav' ? FAV_ITEM : (m === 'other' ? OTHER : CATS.find(c => c.id === m));
   genreBtn.style.setProperty('--c', it.color);
   genreBtn.querySelector('.label').textContent = m === 'all' ? 'All' : it.label;
   genreBtn.classList.toggle('active', m !== 'all');
-  for (const b of menuItems) b.setAttribute('aria-checked', String(b.dataset.mode === m));
+  for (const b of menuItems) if (b.dataset.mode) b.setAttribute('aria-checked', String(b.dataset.mode === m));
   if (current && !active.includes(current)) dropStation();
 }
 
