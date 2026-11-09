@@ -7,7 +7,7 @@
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#02030a">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#02030a">
 <meta name="color-scheme" content="dark">
-<title>Terra Dial</title>
+<title>TerraDial</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap">
@@ -98,9 +98,10 @@
     display: flex; gap: 8px; align-items: center;
     pointer-events: none;
   }
+  /* wordmark: plain Geist Mono, no caps or wide tracking */
   #top h1 {
-    font-size: 14px; letter-spacing: .3em; text-transform: uppercase; white-space: nowrap;
-    color: var(--cyan); margin-right: auto; text-shadow: 0 0 12px rgba(94,242,255,.6);
+    font-size: 17px; font-weight: 600; letter-spacing: -0.02em; white-space: nowrap;
+    color: var(--cyan); margin-right: auto; text-shadow: 0 0 10px rgba(94,242,255,.35);
     -webkit-user-select: none; user-select: none;
   }
 
@@ -190,7 +191,7 @@
 
   /* phones: icon-only Mute/Random so title + genre + controls fit one row */
   @media (max-width: 560px) {
-    #top h1 { font-size: 12px; letter-spacing: .22em; }
+    #top h1 { font-size: 15px; }
     #mute .label, #random .label {
       position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
     }
@@ -236,8 +237,8 @@
   #intro > div { transition: transform 300ms var(--ease-out); }
   #intro.leaving { opacity: 0; pointer-events: none; }
   #intro.leaving > div { transform: scale(0.97); }
-  #intro h2 { font-size: 28px; letter-spacing: .35em; text-transform: uppercase; color: var(--cyan);
-    text-shadow: 0 0 18px rgba(94,242,255,.7); margin-bottom: 12px;
+  #intro h2 { font-size: 36px; font-weight: 600; letter-spacing: -0.03em; color: var(--cyan);
+    text-shadow: 0 0 16px rgba(94,242,255,.4); margin-bottom: 12px;
     -webkit-user-select: none; user-select: none; }
   #intro p { color: var(--muted); font-size: 13px; line-height: 1.7; max-width: 420px; margin: 0 auto 22px; }
   #power { font-size: 14px; padding: 12px 28px; }
@@ -256,7 +257,7 @@
 <div id="cross"><b class="halo"></b><i></i><i></i><i></i><i></i></div>
 
 <div id="top">
-    <h1>Terra Dial</h1>
+    <h1>TerraDial</h1>
     <button id="genreBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="genreMenu">
       <i class="dot"></i><span class="label">All</span>
       <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 3.5 3 3 3-3"/></svg>
@@ -284,7 +285,7 @@
 
 <div id="intro">
   <div>
-    <h2>Terra Dial</h2>
+    <h2>TerraDial</h2>
     <p>Spin the Earth. Line a city up with the crosshair and the static will clear as a real live station comes through. Each dot's colour is its genre — choose a genre from the menu up top to show only those stations.</p>
     <button id="power" disabled>Loading stations…</button>
   </div>
