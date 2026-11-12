@@ -85,6 +85,12 @@
       inset 0 0 18px color-mix(in srgb, var(--accent) 50%, transparent);
     opacity: .15; will-change: opacity;
   }
+  /* sonar ring: sent out from the crosshair with each buffering ping */
+  #cross .ping {
+    position: absolute; inset: -2px; border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    opacity: 0; will-change: transform, opacity;
+  }
 
   /* station beacon (positioned by the globe; children animate) */
   .beacon { position: relative; width: 14px; height: 14px; pointer-events: none; }
@@ -386,7 +392,7 @@
 <div id="globe"></div>
 <canvas id="static"></canvas>
 <div id="scan"></div>
-<div id="cross"><b class="halo"></b><i></i><i></i><i></i><i></i></div>
+<div id="cross"><b class="halo"></b><b class="ping"></b><i></i><i></i><i></i><i></i></div>
 
 <div id="top">
     <h1>TerraDial</h1>
@@ -804,7 +810,7 @@ function silentWavUrl() {
   return 'data:audio/wav;base64,' + btoa(bin);
 }
 
-let ctx, master, noiseGain, musicGain, analyser, freq, wave;
+let ctx, master, noiseGain, musicGain, pingIn, pingGain, analyser, freq, wave;
 let muted = false;
 
 function initAudio() {
@@ -830,6 +836,22 @@ function initAudio() {
   noiseGain.connect(master);
   noise.start(0);
 
+  // buffering sonar: pings → soft, darkening echo → pingGain → master.
+  // Takes over from the static while a selected station is still connecting.
+  pingGain = ctx.createGain(); pingGain.gain.value = 0;
+  pingGain.connect(master);
+  pingIn = ctx.createGain();
+  const echo = ctx.createDelay(1); echo.delayTime.value = 0.32;
+  const echoTone = ctx.createBiquadFilter();
+  echoTone.type = 'lowpass'; echoTone.frequency.value = 1800;
+  const echoFb = ctx.createGain(); echoFb.gain.value = 0.4;
+  pingIn.connect(pingGain);
+  pingIn.connect(echo);
+  echo.connect(echoTone);
+  echoTone.connect(echoFb);
+  echoFb.connect(echo);
+  echoTone.connect(pingGain);
+
   // music: player → gain → master, and player → analyser (pre-gain, for the glow)
   musicGain = ctx.createGain(); musicGain.gain.value = 0;
   analyser = ctx.createAnalyser(); analyser.fftSize = 256;
@@ -847,9 +869,10 @@ function initAudio() {
 }
 
 let activeEl = null, current = null, live = false, fake = false, silentSince = 0;
+let stalledSince = 0;            // a playing stream ran dry and is re-buffering
 
 function clearEl(el) { el.pause(); el.removeAttribute('src'); el.load(); }
-function stopAudio() { activeEl = null; live = false; clearEl(corsEl); clearEl(plainEl); }
+function stopAudio() { activeEl = null; live = false; stalledSince = 0; clearEl(corsEl); clearEl(plainEl); }
 
 // iOS ignores .volume on media elements, but does respect .muted
 function setElVol(el, v) {
@@ -858,7 +881,7 @@ function setElVol(el, v) {
 }
 
 function start(el, url) {
-  activeEl = el; live = false; silentSince = 0;
+  activeEl = el; live = false; silentSince = 0; stalledSince = 0;
   el.src = url;
   el.play().catch(err => {
     if (activeEl === el && err && err.name === 'NotAllowedError') setStatus('Tap anywhere to play');
@@ -869,10 +892,15 @@ for (const el of [corsEl, plainEl]) {
   el.addEventListener('playing', () => {
     if (activeEl !== el) return;
     live = true;
+    stalledSince = 0;
     setStatus('On Air', 'live');
     if (current && metaFor !== current) startMeta(current);
   });
-  el.addEventListener('waiting', () => { if (activeEl === el) setStatus('Buffering', 'busy'); });
+  el.addEventListener('waiting', () => {
+    if (activeEl !== el) return;
+    if (live && !stalledSince) stalledSince = performance.now();
+    setStatus('Buffering', 'busy');
+  });
 }
 corsEl.addEventListener('error', () => { if (activeEl === corsEl && current) playWithoutCors(current); });
 plainEl.addEventListener('error', () => {
@@ -1266,11 +1294,43 @@ let whereText = '';              // "Over Czechia · 49.8°N 15.5°E"
 const placeEl = $('place');
 const cross = $('cross');
 const crossHalo = cross.querySelector('.halo');
+const pingRing = cross.querySelector('.ping');
 
 // The detent: how fast the camera may still be drifting (in capture-widths per
 // second) and still count as "at rest", and how long the snap glide takes.
 const REST_SPEED = 0.3;
 const SNAP_MS = 320;
+
+/* ---------- buffering sonar ----------
+   While a selected station connects (or re-buffers), the static steps aside for
+   a soft two-note ping every 1.6 s, and the crosshair sends out a matching ring
+   and brightens its halo. Drag off the station and the static comes back. */
+const PING_EVERY = 1600;         // ms
+const STALL_GRACE = 500;         // ms a playing stream may hiccup before the sonar starts
+let nextPingAt = 0, pingAt = -Infinity;
+
+function sonarPing() {
+  const t0 = ctx.currentTime + 0.02;
+  // a C6 bell over a quiet C5, both fading out like a struck glass
+  for (const [f, vol, dur] of [[1046.5, 0.22, 1.3], [523.25, 0.08, 1.1]]) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(pingIn);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  // the ring: expands out of the crosshair (reduced motion: just a soft flash)
+  if (pingRing.animate) {
+    pingRing.animate(
+      RM.matches
+        ? [{ opacity: 0.5 }, { opacity: 0 }]
+        : [{ opacity: 0.7, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(2.2)' }],
+      { duration: 1300, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' }
+    );
+  }
+}
 
 function frame(t) {
   requestAnimationFrame(frame);
@@ -1343,16 +1403,27 @@ function frame(t) {
     }
   } else pending = null;
 
-  // mix static and music (master gain handles mute for the Web Audio path)
+  // buffering: on a station whose stream hasn't started, or has stalled for a
+  // moment. Scaled by signal strength, so dragging away fades back to static.
+  const loading = !!current && target === current && !current.dead &&
+    (!live || (stalledSince > 0 && t - stalledSince > STALL_GRACE));
+  const buf = loading ? strength : 0;
+
+  // mix static, sonar and music (master gain handles mute for the Web Audio path)
   const mg = live && target === current ? Math.pow(strength, 0.8) : 0;
   const now = ctx.currentTime;
   if (fake) setElVol(plainEl, muted ? 0 : mg);
   else musicGain.gain.setTargetAtTime(mg, now, 0.08);
-  noiseGain.gain.setTargetAtTime(0.015 + 0.16 * (1 - mg), now, 0.08);
+  noiseGain.gain.setTargetAtTime((0.015 + 0.16 * (1 - mg)) * (1 - buf), now, 0.08);
+  pingGain.gain.setTargetAtTime(buf, now, 0.08);
+  if (buf > 0.3) {
+    if (t >= nextPingAt) { nextPingAt = t + PING_EVERY; pingAt = t; sonarPing(); }
+  } else nextPingAt = 0;         // the next buffering spell pings straight away
 
   // visual static: ~20 redraws a second (it reads as the same flicker), slower
-  // with reduced motion, and none at all once a station is clearly tuned in
-  const staticOpacity = 0.04 + 0.3 * (1 - mg);
+  // with reduced motion, and none at all once a station is clearly tuned in.
+  // While buffering it thins right down so the sonar ring reads cleanly.
+  const staticOpacity = (0.04 + 0.3 * (1 - mg)) * (1 - 0.75 * buf);
   if (staticOpacity > 0.06 && t - lastStatic > (RM.matches ? 150 : 50)) {
     lastStatic = t;
     drawStatic();
@@ -1390,10 +1461,13 @@ function frame(t) {
   const tau = level > glow ? 250 : 900;
   glow += (level - glow) * (1 - Math.exp(-dt / tau));
 
+  // sonar flash: each ping lights the halo, fading over ~0.6 s
+  const flash = buf * Math.exp(-(t - pingAt) / 600);
+
   // glow: opacity + transform only, so it stays on the compositor
   const g = glow * mg;
-  setStyle(crossHalo, 'opacity', (0.15 + g * 0.85).toFixed(2));
-  setStyle(cross, 'transform', RM.matches ? '' : `scale(${(1 + g * 0.18).toFixed(3)})`);
+  setStyle(crossHalo, 'opacity', Math.min(1, 0.15 + g * 0.85 + flash * 0.6).toFixed(2));
+  setStyle(cross, 'transform', RM.matches ? '' : `scale(${(1 + g * 0.18 + flash * 0.06).toFixed(3)})`);
   setStyle(beaconHalo, 'opacity', (0.45 + g * 0.55).toFixed(2));
 
   // signal meter
