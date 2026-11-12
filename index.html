@@ -276,7 +276,21 @@
     #footer a .ic { width: 12px; height: 12px; }
   }
 
-  #status { font-size: 11px; line-height: 16px; letter-spacing: .25em; text-transform: uppercase; color: var(--muted); }
+  /* status sits on the bottom row, left of the signal meter; wraps rather than
+     pushing the meter if a message ever runs long */
+  #status {
+    flex: 1; min-width: 0;
+    font-size: 11px; line-height: 16px; letter-spacing: .25em; text-transform: uppercase; color: var(--muted);
+  }
+  /* Held / Muted after the status. Phones: Held is dropped (the lit lock says it)
+     and Muted becomes an icon; both stay readable to screen readers */
+  #status .mute-ic { display: none; width: 12px; height: 12px; margin-left: 8px; vertical-align: -1px; }
+  @media (max-width: 560px) {
+    #status .s-held, #status .s-muted .s-txt {
+      position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+    }
+    #status .mute-ic { display: inline-block; }
+  }
   #status .s-main { display: inline-block; }
 
   /* connecting: three dots fill in one by one, in hard steps like an old LCD */
@@ -295,8 +309,9 @@
     color: var(--cyan); font-weight: 600;
     text-shadow: 0 0 10px rgba(94, 242, 255, .45);
   }
-  .name-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+  .name-row { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; }
   #name { flex: 1; min-width: 0; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #name.empty { color: var(--muted); }    /* nothing tuned: "Searching the airwaves" */
 
   /* back, hold and favourite: 40px tap targets that don't grow the row */
   .icon-btn {
@@ -334,6 +349,18 @@
   #peek .pk-label { flex: none; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; }
   #peek .pk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   #peekTune { flex: none; min-height: 32px; padding: 0 12px; font-size: 11px; }
+  /* phones: label on its own line, the station name big enough to read under it */
+  @media (max-width: 560px) {
+    #peek {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas: "l l b" "d n b"; column-gap: 8px; row-gap: 4px; align-items: center;
+    }
+    #peek[hidden] { display: none; }
+    #peek .pk-label { grid-area: l; }
+    #peek .dot { grid-area: d; }
+    #peek .pk-name { grid-area: n; font-size: 14px; }
+    #peekTune { grid-area: b; min-height: 40px; }
+  }
   #track {
     font-size: 13px; color: var(--accent); margin-bottom: 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -347,6 +374,8 @@
   }
   /* signal strength: how close the crosshair is to the station */
   #signal { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  #signal #meter { flex: none; width: 116px; }
+  @media (max-width: 560px) { #signal #meter { width: 80px; } }
   #signal .sig-label {
     flex: none; font-size: 10px; line-height: 1; letter-spacing: .2em;
     text-transform: uppercase; color: var(--muted);
@@ -434,12 +463,11 @@
 <div id="genreMenu" role="menu" aria-label="Station genre"></div>
 
 <div id="panel">
-  <div id="status">Searching the airwaves</div>
   <div class="name-row">
     <button id="back" class="icon-btn" aria-label="Back to previous station" title="Back to previous station (B)" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
     </button>
-    <div id="name">—</div>
+    <div id="name" class="empty">Searching the airwaves</div>
     <button id="hold" class="icon-btn" aria-pressed="false" aria-label="Hold this station" title="Hold this station (L)" hidden>
       <svg class="unlocked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>
       <svg class="locked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
@@ -451,6 +479,7 @@
   <div id="track" hidden></div>
   <div id="place">Drag the globe to tune</div>
   <div id="signal">
+    <div id="status"></div>
     <span class="sig-label" aria-hidden="true">Signal</span>
     <div id="meter" role="meter" aria-label="Signal strength" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"><span></span><span></span><span></span><span></span><span></span></div>
   </div>
@@ -1015,8 +1044,9 @@ function dropStation() {
   stopMeta();
   setTrack(null);
   setAccent(OTHER.color);
-  setStatus('Searching the airwaves');
-  $('name').textContent = '—';
+  setStatus('');
+  $('name').textContent = 'Searching the airwaves';
+  $('name').classList.add('empty');
   $('place').textContent = whereText || 'Drag the globe to tune';
   renderFavBtn();
 }
@@ -1179,7 +1209,8 @@ function setTrack(text) {
 }
 
 /* ---------- UI ---------- */
-let statusText = 'Searching the airwaves';
+let statusText = '';             // nothing tuned: the name line says "Searching the airwaves"
+const MUTE_IC = '<svg class="mute-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>';
 let statusKind = '';             // '' | 'busy' (connecting) | 'live' (on air)
 function setStatus(t, kind = '') {
   const becameLive = kind === 'live' && statusKind !== 'live';
@@ -1191,15 +1222,20 @@ function renderStatus() {
   const el = $('status');
   el.dataset.kind = statusKind;
   el.textContent = '';
-  const main = document.createElement('span');
-  main.className = 's-main';
-  main.textContent = statusText;
-  el.append(main);
-  if (statusKind === 'busy') {
-    el.insertAdjacentHTML('beforeend', '<span class="s-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>');
+  if (statusText) {
+    const main = document.createElement('span');
+    main.className = 's-main';
+    main.textContent = statusText;
+    el.append(main);
+    if (statusKind === 'busy') {
+      el.insertAdjacentHTML('beforeend', '<span class="s-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>');
+    }
   }
-  if (held) el.append(' · Held');
-  if (muted) el.append(' · Muted');
+  if (held) el.insertAdjacentHTML('beforeend', '<span class="s-held"> · Held</span>');
+  if (muted) {
+    const sep = statusText || held ? ' · ' : '';
+    el.insertAdjacentHTML('beforeend', `<span class="s-muted"><span class="s-txt">${sep}Muted</span>${MUTE_IC}</span>`);
+  }
 }
 
 // set only when the tuned station changes, never per frame
@@ -1228,6 +1264,7 @@ function popBeacon() {
 
 function showStation(st) {
   $('name').textContent = st.name;
+  $('name').classList.remove('empty');
   const where = [st.state, st.country].filter(Boolean).join(', ');
   const tags = st.tags.slice(0, 3).join(' · ');
   $('place').textContent = `${flag(st.cc)} ${where}  —  ${st.cat.label}${tags ? ' · ' + tags : ''}`;
