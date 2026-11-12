@@ -313,6 +313,20 @@
   #name { flex: 1; min-width: 0; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #name.empty { color: var(--muted); }    /* nothing tuned: "Searching the airwaves" */
 
+  /* names too long for the row crawl like a ticker: two copies side by side,
+     slid one copy's width, so the loop is seamless. Rests at the start first. */
+  #name.crawl {
+    text-overflow: clip;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+            mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  #name .run { display: inline-flex; will-change: transform; animation: crawl var(--crawl-s, 12s) linear infinite; }
+  #name .run span { flex: none; padding-right: 56px; }
+  @keyframes crawl {
+    0%, 18% { transform: translateX(0); }
+    100%    { transform: translateX(-50%); }
+  }
+
   /* back, hold and favourite: 40px tap targets that don't grow the row */
   .icon-btn {
     flex: none; display: grid; place-items: center;
@@ -1045,7 +1059,7 @@ function dropStation() {
   setTrack(null);
   setAccent(OTHER.color);
   setStatus('');
-  $('name').textContent = 'Searching the airwaves';
+  setName('Searching the airwaves');
   $('name').classList.add('empty');
   $('place').textContent = whereText || 'Drag the globe to tune';
   renderFavBtn();
@@ -1262,9 +1276,51 @@ function popBeacon() {
   );
 }
 
+/* ---------- station name: crawls when it doesn't fit ---------- */
+const nameEl = $('name');
+nameEl.dataset.n = nameEl.textContent;   // the starting "Searching the airwaves"
+const CRAWL_PX_S = 35;           // crawl speed, px per second
+const CRAWL_GAP = 56;            // space between the end of the name and its repeat (matches the CSS)
+
+function setName(text) {
+  nameEl.dataset.n = text;
+  nameEl.title = text;
+  fitName();
+}
+// plain text first; if it overflows (and motion is allowed), swap in the ticker
+function fitName() {
+  const text = nameEl.dataset.n || '';
+  nameEl.classList.remove('crawl');
+  nameEl.textContent = text;
+  if (RM.matches || nameEl.classList.contains('empty')) return;   // reduced motion: ellipsis
+  if (nameEl.scrollWidth <= nameEl.clientWidth + 1) return;
+  const run = document.createElement('span');
+  run.className = 'run';
+  const a = document.createElement('span'), b = document.createElement('span');
+  a.textContent = b.textContent = text;
+  b.setAttribute('aria-hidden', 'true');
+  run.append(a, b);
+  nameEl.textContent = '';
+  nameEl.append(run);
+  nameEl.classList.add('crawl');
+  // the moving part (82% of the cycle) covers one copy's width at CRAWL_PX_S
+  const moveS = a.offsetWidth / CRAWL_PX_S;
+  nameEl.style.setProperty('--crawl-s', (moveS / 0.82).toFixed(1) + 's');
+}
+// re-check when the row changes width (window resize, Back/Hold buttons
+// appearing) or the web font arrives
+let nameW = 0;
+if (window.ResizeObserver) {
+  new ResizeObserver(() => {
+    if (nameEl.clientWidth !== nameW) { nameW = nameEl.clientWidth; fitName(); }
+  }).observe(nameEl);
+} else addEventListener('resize', () => fitName());
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitName());
+RM.addEventListener && RM.addEventListener('change', () => fitName());
+
 function showStation(st) {
-  $('name').textContent = st.name;
-  $('name').classList.remove('empty');
+  nameEl.classList.remove('empty');
+  setName(st.name);
   const where = [st.state, st.country].filter(Boolean).join(', ');
   const tags = st.tags.slice(0, 3).join(' · ');
   $('place').textContent = `${flag(st.cc)} ${where}  —  ${st.cat.label}${tags ? ' · ' + tags : ''}`;
