@@ -298,22 +298,42 @@
   .name-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
   #name { flex: 1; min-width: 0; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* favourite heart: a 40px tap target that doesn't grow the row */
-  #fav {
+  /* back, hold and favourite: 40px tap targets that don't grow the row */
+  .icon-btn {
     flex: none; display: grid; place-items: center;
-    width: 40px; height: 40px; margin: -10px -12px -10px 0; padding: 0;
+    width: 40px; height: 40px; margin: -10px -6px; padding: 0;
     border: 0; border-radius: 50%; background: transparent; color: var(--muted);
     transition: color 150ms ease, transform 160ms var(--ease-out);
   }
-  #fav[hidden] { display: none; }
-  #fav svg { width: 20px; height: 20px; transition: fill 150ms ease; }
-  #fav[aria-pressed="true"] { color: var(--accent); }
+  .icon-btn[hidden] { display: none; }
+  .icon-btn svg { width: 20px; height: 20px; transition: fill 150ms ease; }
+  .icon-btn:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -4px; }
+  #back { margin-left: -12px; }
+  #fav { margin-right: -12px; }
+  #fav[aria-pressed="true"], #hold[aria-pressed="true"] { color: var(--accent); }
   #fav[aria-pressed="true"] svg { fill: currentColor; }
-  #fav:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -4px; }
+  #hold .locked, #hold[aria-pressed="true"] .unlocked { display: none; }
+  #hold[aria-pressed="true"] .locked { display: block; }
   @media (hover: hover) and (pointer: fine) {
-    #fav:hover { color: var(--text); }
-    #fav[aria-pressed="true"]:hover { color: var(--accent); }
+    .icon-btn:hover { color: var(--text); }
+    #fav[aria-pressed="true"]:hover, #hold[aria-pressed="true"]:hover { color: var(--accent); }
   }
+
+  /* held: the crosshair only browses, so it goes quiet and neutral */
+  body.held #cross { border-color: var(--muted); }
+  body.held #cross i { background: var(--muted); }
+  body.held #cross .halo { opacity: 0 !important; }
+
+  /* while held: the station under the crosshair, ready to switch to */
+  #peek {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08);
+    font-size: 12px; color: var(--muted);
+  }
+  #peek[hidden] { display: none; }
+  #peek .pk-label { flex: none; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; }
+  #peek .pk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  #peekTune { flex: none; min-height: 32px; padding: 0 12px; font-size: 11px; }
   #track {
     font-size: 13px; color: var(--accent); margin-bottom: 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -416,8 +436,15 @@
 <div id="panel">
   <div id="status">Searching the airwaves</div>
   <div class="name-row">
+    <button id="back" class="icon-btn" aria-label="Back to previous station" title="Back to previous station (B)" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+    </button>
     <div id="name">—</div>
-    <button id="fav" aria-pressed="false" aria-label="Save to favourites" title="Save to favourites (F)" hidden>
+    <button id="hold" class="icon-btn" aria-pressed="false" aria-label="Hold this station" title="Hold this station (L)" hidden>
+      <svg class="unlocked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>
+      <svg class="locked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    </button>
+    <button id="fav" class="icon-btn" aria-pressed="false" aria-label="Save to favourites" title="Save to favourites (F)" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.3-4.5-9.3-9C1.3 8.1 3.3 4.6 6.8 4.6c2.1 0 3.6 1.2 5.2 3 1.6-1.8 3.1-3 5.2-3 3.5 0 5.5 3.5 4.1 6.9-2 4.5-9.3 9-9.3 9z"/></svg>
     </button>
   </div>
@@ -426,6 +453,11 @@
   <div id="signal">
     <span class="sig-label" aria-hidden="true">Signal</span>
     <div id="meter" role="meter" aria-label="Signal strength" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+  <div id="peek" hidden>
+    <span class="pk-label">Under crosshair</span>
+    <i class="dot"></i><span class="pk-name"></span>
+    <button id="peekTune">Tune in</button>
   </div>
 </div>
 
@@ -661,8 +693,24 @@ controls.addEventListener('start', () => { dragging = true; snapArmed = true; wa
 controls.addEventListener('end', () => { dragging = false; wakeGlobe(); });
 controls.addEventListener('change', () => wakeGlobe()); // includes the damping glide
 const globeEl = $('globe');
-globeEl.addEventListener('pointerdown', () => wakeGlobe(), { capture: true });
-globeEl.addEventListener('wheel', () => wakeGlobe(), { capture: true, passive: true });
+
+// How far the finger or mouse actually travelled in this gesture (CSS px), so a
+// brush of the screen or a tap can be told apart from a deliberate drag. Under
+// NUDGE_PX, the dial stays on the station it was on (see the detent).
+const NUDGE_PX = 12;
+let gestureTravel = Infinity, downX = 0, downY = 0, pointers = 0;
+globeEl.addEventListener('pointerdown', e => {
+  wakeGlobe();
+  if (pointers++ === 0) { downX = e.clientX; downY = e.clientY; gestureTravel = 0; }
+  else gestureTravel = Infinity;               // a second finger: a pinch, always deliberate
+}, { capture: true });
+addEventListener('pointermove', e => {
+  if (pointers) gestureTravel = Math.max(gestureTravel, Math.hypot(e.clientX - downX, e.clientY - downY));
+});
+const lift = () => { pointers = Math.max(0, pointers - 1); };
+addEventListener('pointerup', lift);
+addEventListener('pointercancel', lift);
+globeEl.addEventListener('wheel', () => { wakeGlobe(); gestureTravel = Infinity; }, { capture: true, passive: true });
 
 // don't pause before the textures have drawn, or the globe could stay black
 globe.onGlobeReady(() => { globeReady = true; wakeGlobe(1500); });
@@ -907,11 +955,13 @@ plainEl.addEventListener('error', () => {
   if (activeEl !== plainEl || !current) return;
   current.dead = true;
   scanKey = '';                  // re-pick the nearest station without this one
+  setHeld(false);                // nothing left to hold on to
   stopAudio();
   setStatus('No signal');
 });
 
 function tune(st) {
+  if (current && current !== st && !goingBack) remember(current);
   stopAudio();
   current = st; fake = false;
   setAccent(st.cat.color);
@@ -919,6 +969,8 @@ function tune(st) {
   setTrack(null);
   showStation(st);
   renderFavBtn();
+  renderBack();
+  holdBtn.hidden = false;
   setStatus('Tuning', 'busy');
   globe.htmlElementsData([{ lat: st.lat, lng: st.lng, el: beacon }]);
   wakeGlobe(1300);               // let the globe place the beacon
@@ -952,8 +1004,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function dropStation() {
+  if (current) remember(current);
+  setHeld(false);
   stopAudio();
   current = null;
+  renderBack();
+  holdBtn.hidden = true;
   globe.htmlElementsData([]);
   wakeGlobe();
   stopMeta();
@@ -964,6 +1020,94 @@ function dropStation() {
   $('place').textContent = whereText || 'Drag the globe to tune';
   renderFavBtn();
 }
+
+// Glide the globe onto a station without retuning to anything it passes on the way.
+let quietUntil = 0;
+function settleOn(st, ms) {
+  const dur = RM.matches ? 0 : ms;
+  snapArmed = false;
+  quietUntil = performance.now() + dur + 400;
+  wakeGlobe(dur + 600);
+  globe.pointOfView({ lat: st.lat, lng: st.lng, altitude: globe.pointOfView().altitude }, dur);
+}
+
+/* ---------- hold ----------
+   Pins the station you're hearing: it plays on at full strength while the
+   crosshair roams. The station under the crosshair shows in the panel with a
+   "Tune in" button. Letting go glides back home, so nothing changes by surprise. */
+let held = false;
+const holdBtn = $('hold');
+const peekEl = $('peek'), peekName = peekEl.querySelector('.pk-name'), peekTune = $('peekTune');
+let peekSt = null;
+
+function setHeld(v, goHome) {
+  if (v && !current) return;
+  if (held === v) return;
+  held = v;
+  document.body.classList.toggle('held', v);
+  holdBtn.setAttribute('aria-pressed', String(v));
+  const label = v ? 'Release this station' : 'Hold this station';
+  holdBtn.setAttribute('aria-label', label);
+  holdBtn.title = label + ' (L)';
+  if (!v) {
+    renderPeek(null);
+    if (goHome && current && !current.dead) settleOn(current, 900);
+  }
+  renderStatus();
+}
+holdBtn.onclick = () => setHeld(!held, true);
+
+function renderPeek(st) {
+  if (st === peekSt) return;
+  peekSt = st;
+  peekEl.hidden = !st;
+  if (!st) return;
+  peekEl.style.setProperty('--c', st.cat.color);
+  peekTune.style.setProperty('--c', st.cat.color);
+  peekName.textContent = `${flag(st.cc)} ${st.name}`.trim();
+  morph(peekName);
+}
+peekTune.onclick = () => {
+  const st = peekSt;
+  if (!st) return;
+  setHeld(false);
+  pending = null;
+  tune(st);
+  settleOn(st, SNAP_MS);
+};
+
+/* ---------- back ----------
+   Every station you leave goes on a stack; Back steps through it. */
+const backBtn = $('back');
+const backStack = [];
+let goingBack = false;
+
+function remember(st) {
+  if (backStack[backStack.length - 1] !== st) {
+    backStack.push(st);
+    if (backStack.length > 30) backStack.shift();
+  }
+}
+function renderBack() {
+  backBtn.hidden = !backStack.some(s => !s.dead && s !== current);
+}
+function goBack() {
+  let st = null;
+  while (backStack.length && !st) {
+    const s = backStack.pop();
+    if (!s.dead && s !== current) st = s;
+  }
+  renderBack();
+  if (!st) return;
+  setHeld(false);
+  if (!active.includes(st)) setMode('all');
+  goingBack = true;
+  pending = null;
+  tune(st);
+  goingBack = false;
+  settleOn(st, 1200);
+}
+backBtn.onclick = goBack;
 
 /* ---------- mute ---------- */
 function setMuted(v) {
@@ -980,7 +1124,10 @@ $('mute').onclick = () => setMuted(!muted);
 addEventListener('keydown', e => {
   if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'm' || e.key === 'M') setMuted(!muted);
-  if ((e.key === 'f' || e.key === 'F') && current && !genreMenu.contains(document.activeElement)) toggleFav(current);
+  if (genreMenu.contains(document.activeElement)) return;
+  if ((e.key === 'f' || e.key === 'F') && current) toggleFav(current);
+  if ((e.key === 'l' || e.key === 'L') && current) setHeld(!held, true);
+  if (e.key === 'b' || e.key === 'B') goBack();
 });
 
 /* ---------- now playing (via the Cloudflare Worker) ----------
@@ -1051,6 +1198,7 @@ function renderStatus() {
   if (statusKind === 'busy') {
     el.insertAdjacentHTML('beforeend', '<span class="s-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>');
   }
+  if (held) el.append(' · Held');
   if (muted) el.append(' · Muted');
 }
 
@@ -1156,6 +1304,7 @@ function buildMenu() {
 
 // fly the globe so the station sits under the crosshair; tuning then happens as usual
 function flyTo(st) {
+  setHeld(false);                // picking a station means you want to hear it
   if (!active.includes(st)) setMode(st.fav ? 'fav' : 'all');
   const ms = RM.matches ? 0 : 1600;
   snapArmed = false;             // the flight lands dead-centre; don't snap at its slow start
@@ -1265,6 +1414,7 @@ $('random').onclick = () => {
   const pool = active.filter(s => !s.dead);
   if (!pool.length) return;
   const s = pool[Math.floor(Math.random() * pool.length)];
+  setHeld(false);
   const ms = RM.matches ? 0 : 1600;
   snapArmed = false;
   wakeGlobe(ms + 600);
@@ -1322,7 +1472,7 @@ function sonarPing() {
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
   // the ring: expands out of the crosshair (reduced motion: just a soft flash)
-  if (pingRing.animate) {
+  if (pingRing.animate && !held) {
     pingRing.animate(
       RM.matches
         ? [{ opacity: 0.5 }, { opacity: 0 }]
@@ -1372,14 +1522,21 @@ function frame(t) {
   // glide it under the crosshair, so the signal reads full and the static clears.
   // At rest the nearest station always wins over the sticky one, so you can pick
   // a neighbour in a dense city by stopping on it.
+  // A brush of the screen or a tap isn't a choice: if the finger barely moved,
+  // stay on the current station and settle back onto it, even if a neighbour
+  // in a dense city is now a hair nearer. While held, the detent still centres
+  // stations under the crosshair, it just doesn't tune them.
   if (snapArmed && !dragging && speed < capture * REST_SPEED && t - zoomedAt > 250) {
     snapArmed = false;
-    if (nearest && nearestDist < capture) {
-      if (nearest !== current) { pending = null; tune(nearest); }
-      if (nearestDist > 0.03) {
+    let pick = nearest && nearestDist < capture ? nearest : null;
+    if (gestureTravel < NUDGE_PX && current && !current.dead &&
+        angleOf(dot(current.v, camV)) < capture) pick = current;
+    if (pick) {
+      if (pick !== current && !held) { pending = null; tune(pick); }
+      if (angleOf(dot(pick.v, camV)) > 0.03) {
         const ms = RM.matches ? 0 : SNAP_MS;  // reduced motion: jump, don't glide
         wakeGlobe(ms + 400);
-        globe.pointOfView({ lat: nearest.lat, lng: nearest.lng, altitude: pov.altitude }, ms);
+        globe.pointOfView({ lat: pick.lat, lng: pick.lng, altitude: pov.altitude }, ms);
       }
     }
   }
@@ -1394,23 +1551,29 @@ function frame(t) {
   let strength = target ? 1 - dist / capture : 0;
   strength = strength * strength * (3 - 2 * strength); // smoothstep
 
-  // short debounce so fast spinning doesn't load every stream it passes
-  if (target !== current) {
-    if (target !== pending) { pending = target; pendingSince = t; }
-    else if (t - pendingSince > 350) {
-      pending = null;
-      target ? tune(target) : dropStation();
-    }
-  } else pending = null;
+  // short debounce so fast spinning doesn't load every stream it passes.
+  // Held, or gliding home after Back / Tune in / letting go: no retuning.
+  if (held || t < quietUntil || target === current) pending = null;
+  else if (target !== pending) { pending = target; pendingSince = t; }
+  else if (t - pendingSince > 350) {
+    pending = null;
+    target ? tune(target) : dropStation();
+  }
+  // browsing while held: plain nearest station, no stickiness toward the held one
+  const browse = nearest && nearestDist < capture ? nearest : null;
+  renderPeek(held && browse !== current ? browse : null);
+
+  // how well the station you're hearing comes in: full while held
+  const sig = held ? 1 : target === current ? strength : 0;
 
   // buffering: on a station whose stream hasn't started, or has stalled for a
   // moment. Scaled by signal strength, so dragging away fades back to static.
-  const loading = !!current && target === current && !current.dead &&
+  const loading = !!current && !current.dead && sig > 0 &&
     (!live || (stalledSince > 0 && t - stalledSince > STALL_GRACE));
-  const buf = loading ? strength : 0;
+  const buf = loading ? sig : 0;
 
   // mix static, sonar and music (master gain handles mute for the Web Audio path)
-  const mg = live && target === current ? Math.pow(strength, 0.8) : 0;
+  const mg = live ? Math.pow(sig, 0.8) : 0;
   const now = ctx.currentTime;
   if (fake) setElVol(plainEl, muted ? 0 : mg);
   else musicGain.gain.setTargetAtTime(mg, now, 0.08);
@@ -1462,16 +1625,17 @@ function frame(t) {
   glow += (level - glow) * (1 - Math.exp(-dt / tau));
 
   // sonar flash: each ping lights the halo, fading over ~0.6 s
-  const flash = buf * Math.exp(-(t - pingAt) / 600);
+  // (held: the crosshair isn't what you're hearing, so only the beacon pulses)
+  const flash = held ? 0 : buf * Math.exp(-(t - pingAt) / 600);
 
   // glow: opacity + transform only, so it stays on the compositor
-  const g = glow * mg;
-  setStyle(crossHalo, 'opacity', Math.min(1, 0.15 + g * 0.85 + flash * 0.6).toFixed(2));
-  setStyle(cross, 'transform', RM.matches ? '' : `scale(${(1 + g * 0.18 + flash * 0.06).toFixed(3)})`);
+  const g = glow * mg, cg = held ? 0 : g;
+  setStyle(crossHalo, 'opacity', Math.min(1, 0.15 + cg * 0.85 + flash * 0.6).toFixed(2));
+  setStyle(cross, 'transform', RM.matches ? '' : `scale(${(1 + cg * 0.18 + flash * 0.06).toFixed(3)})`);
   setStyle(beaconHalo, 'opacity', (0.45 + g * 0.55).toFixed(2));
 
-  // signal meter
-  const lit = target ? Math.round(strength * bars.length) : 0;
+  // signal meter: the held station always reads full
+  const lit = held ? bars.length : target ? Math.round(strength * bars.length) : 0;
   if (lit !== lastLit) {
     lastLit = lit;
     bars.forEach((b, i) => b.classList.toggle('on', i < lit));
